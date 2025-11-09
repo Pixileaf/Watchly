@@ -93,7 +93,7 @@ class TMDBService:
 
             # Check if we got valid data
             if not data or not isinstance(data, dict):
-                logger.debug(f"Invalid response data for IMDB {imdb_id}")
+                logger.info(f"Invalid response data for IMDB {imdb_id}")
                 return None, None
 
             # Check movie results first
@@ -101,7 +101,7 @@ class TMDBService:
             if movie_results and len(movie_results) > 0:
                 tmdb_id = movie_results[0].get("id")
                 if tmdb_id:
-                    logger.debug(f"Found TMDB movie {tmdb_id} for IMDB {imdb_id}")
+                    logger.info(f"Found TMDB movie {tmdb_id} for IMDB {imdb_id}")
                     return tmdb_id, "movie"
 
             # Check TV results
@@ -109,10 +109,10 @@ class TMDBService:
             if tv_results and len(tv_results) > 0:
                 tmdb_id = tv_results[0].get("id")
                 if tmdb_id:
-                    logger.debug(f"Found TMDB TV {tmdb_id} for IMDB {imdb_id}")
+                    logger.info(f"Found TMDB TV {tmdb_id} for IMDB {imdb_id}")
                     return tmdb_id, "tv"
 
-            logger.debug(f"No TMDB result found for IMDB {imdb_id}")
+            logger.info(f"No TMDB result found for IMDB {imdb_id}")
             return None, None
         except httpx.HTTPStatusError:
             # Already logged in _make_request

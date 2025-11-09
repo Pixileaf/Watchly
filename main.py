@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException, Response
 from loguru import logger
 from app.services.tmdb_service import TMDBService
 from app.services.recommendation_service import RecommendationService
+from app.utils import clear_cache
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -92,6 +93,21 @@ async def get_catalog(type: str, id: str, response: Response):
     except Exception as e:
         logger.error(f"Error fetching catalog for {type}/{id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/cache")
+async def clear_caches():
+    """
+    Clear all server-side caches (API responses and function results).
+    This will force fresh data to be fetched from external APIs on next request.
+    """
+    try:
+        clear_cache()
+        logger.info("Cache cleared via API endpoint")
+        return {"message": "All caches cleared successfully", "status": "success"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
 
 
 if __name__ == "__main__":

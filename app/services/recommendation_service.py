@@ -157,7 +157,7 @@ class RecommendationService:
         # Double-check: only process if media_type matches requested content_type
         expected_media_type = "movie" if content_type == "movie" else "tv"
         if media_type != expected_media_type:
-            logger.debug(f"Skipping seed {imdb_id}: media_type {media_type} doesn't match {content_type}")
+            logger.info(f"Skipping seed {imdb_id}: media_type {media_type} doesn't match {content_type}")
             return []
 
         # Get recommendations for this seed
@@ -182,7 +182,7 @@ class RecommendationService:
                 return details
             return None
         except Exception as e:
-            logger.debug(f"Error getting details for TMDB {tmdb_id} ({content_type}): {e}")
+            logger.info(f"Error getting details for TMDB {tmdb_id} ({content_type}): {e}")
             return None
 
     async def _get_recommendations_for_seed(self, tmdb_id: int, media_type: str, limit: int) -> List[Dict]:
@@ -253,7 +253,7 @@ class RecommendationService:
             results = []
             for (imdb_id, _), meta_result in zip(imdb_ids_to_fetch, meta_results):
                 if isinstance(meta_result, Exception):
-                    logger.debug(f"Error fetching addon meta for {imdb_id}: {meta_result}")
+                    logger.info(f"Error fetching addon meta for {imdb_id}: {meta_result}")
                     continue
 
                 if meta_result and meta_result.get("meta"):
@@ -269,7 +269,7 @@ class RecommendationService:
                 if len(results) >= limit:
                     break
 
-            logger.debug(f"Found {len(results)} recommendations for seed {tmdb_id} ({media_type})")
+            logger.info(f"Found {len(results)} recommendations for seed {tmdb_id} ({media_type})")
             return results
         except Exception as e:
             logger.warning(f"Error getting recommendations for seed {tmdb_id} ({media_type}): {e}")

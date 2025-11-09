@@ -49,11 +49,11 @@ def cached_api_call(func: Callable) -> Callable:
 
         # Check cache
         if cache_key in _api_cache:
-            logger.debug(f"Cache hit for {func_name}")
+            logger.info(f"Cache hit for {func_name}")
             return _api_cache[cache_key]
 
         # Call function and cache result
-        logger.debug(f"Cache miss for {func_name}, calling API")
+        logger.info(f"Cache miss for {func_name}, calling API")
         result = await func(*args, **kwargs)
         _api_cache[cache_key] = result
         return result
@@ -73,11 +73,11 @@ def cached_function(func: Callable) -> Callable:
 
         # Check cache
         if cache_key in _function_cache:
-            logger.debug(f"Cache hit for {func_name}")
+            logger.info(f"Cache hit for {func_name}")
             return _function_cache[cache_key]
 
         # Call function and cache result
-        logger.debug(f"Cache miss for {func_name}")
+        logger.info(f"Cache miss for {func_name}")
         result = await func(*args, **kwargs)
         _function_cache[cache_key] = result
         return result
