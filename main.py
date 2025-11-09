@@ -21,6 +21,11 @@ tmdb_service = TMDBService()
 recommendation_service = RecommendationService()
 
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
+
 @app.get("/manifest.json")
 async def manifest(response: Response):
     """Stremio manifest endpoint."""
