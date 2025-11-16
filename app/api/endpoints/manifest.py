@@ -15,7 +15,10 @@ async def manifest(response: Response):
         "version": "0.1.0",
         "name": "Watchly",
         "description": "Movie and series recommendations based on your Stremio library",
-        "resources": ["catalog", "stream"],
+        "resources": [
+            {"name": "catalog", "types": ["movie", "series"], "idPrefixes": ["tt"]},
+            {"name": "stream", "types": ["movie", "series"], "idPrefixes": ["tt"]},
+        ],
         "types": ["movie", "series"],
         "idPrefixes": ["tt"],
         "catalogs": [
