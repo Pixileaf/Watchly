@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     STREMIO_USERNAME: str = ""
     STREMIO_PASSWORD: str = ""
     PORT: int = 8000
+    ADDON_ID: str = "com.bimal.watchly"
 
 
 settings = Settings()

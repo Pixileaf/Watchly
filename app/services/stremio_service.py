@@ -222,8 +222,8 @@ class StremioService:
         logger.info(f"Found {len(addons)} addons")
         # find addon with id "com.watchly"
         for addon in addons:
-            if addon.get("manifest", {}).get("id") == "com.watchly":
-                logger.info(f"Found addon with id com.watchly")
+            if addon.get("manifest", {}).get("id") == settings.ADDON_ID:
+                logger.info(f"Found addon with id {settings.ADDON_ID}")
                 addon["manifest"]["catalogs"] = catalogs
                 break
         return await self.update_addon(addons, auth_key)
