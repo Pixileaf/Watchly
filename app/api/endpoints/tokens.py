@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.config import settings
+from app.core.config import settings
 from app.services.catalog_updater import refresh_catalogs_for_credentials
 from app.services.stremio_service import StremioService
 from app.services.token_store import token_store

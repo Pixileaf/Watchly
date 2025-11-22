@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import redis.asyncio as redis
 from loguru import logger
 
-from app.config import settings
+from app.core.config import settings
 
 
 class TokenStore:

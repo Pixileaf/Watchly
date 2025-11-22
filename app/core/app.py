@@ -1,12 +1,16 @@
-import os
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
 import logging
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
-from app.services.catalog_updater import BackgroundCatalogUpdater
+
 from app.api.main import api_router
+from app.services.catalog_updater import BackgroundCatalogUpdater
 from .config import settings
 
 
@@ -22,11 +26,42 @@ class InterceptHandler(logging.Handler):
 
 logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
 
+# Global catalog updater instance
+catalog_updater: BackgroundCatalogUpdater | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manage application lifespan events (startup/shutdown).
+    """
+    global catalog_updater
+    
+    # Startup
+    if settings.AUTO_UPDATE_CATALOGS and settings.CATALOG_REFRESH_INTERVAL_SECONDS > 0:
+        catalog_updater = BackgroundCatalogUpdater(
+            interval_seconds=settings.CATALOG_REFRESH_INTERVAL_SECONDS
+        )
+        catalog_updater.start()
+        logger.info(
+            "Background catalog updates enabled (interval=%ss)",
+            settings.CATALOG_REFRESH_INTERVAL_SECONDS,
+        )
+    
+    yield
+    
+    # Shutdown
+    if catalog_updater:
+        await catalog_updater.stop()
+        catalog_updater = None
+        logger.info("Background catalog updates stopped")
+
 
 app = FastAPI(
     title="Watchly",
     description="Stremio catalog addon for movie and series recommendations",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -39,9 +74,12 @@ app.add_middleware(
 
 # Serve static files
 # Static directory is at project root (3 levels up from app/core/app.py)
-static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# app/core/app.py -> app/core -> app -> root
+project_root = Path(__file__).resolve().parent.parent.parent
+static_dir = project_root / "static"
+
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 # Serve index.html at /configure and /{token}/configure
@@ -71,30 +109,5 @@ async def configure_page(token: str | None = None):
         status_code=200,
     )
 
-
-
-catalog_updater: BackgroundCatalogUpdater | None = None
-
-
-@app.on_event("startup")
-async def start_background_catalog_refresh() -> None:
-    global catalog_updater
-    if settings.AUTO_UPDATE_CATALOGS and settings.CATALOG_REFRESH_INTERVAL_SECONDS > 0:
-        catalog_updater = BackgroundCatalogUpdater(
-            interval_seconds=settings.CATALOG_REFRESH_INTERVAL_SECONDS
-        )
-        catalog_updater.start()
-        logger.info(
-            "Background catalog updates enabled (interval=%ss)",
-            settings.CATALOG_REFRESH_INTERVAL_SECONDS,
-        )
-
-
-@app.on_event("shutdown")
-async def stop_background_catalog_refresh() -> None:
-    global catalog_updater
-    if catalog_updater:
-        await catalog_updater.stop()
-        catalog_updater = None
 
 app.include_router(api_router)
