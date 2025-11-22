@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Request
 
+from app.core.config import settings
+
 router = APIRouter()
 
 
@@ -15,7 +17,7 @@ async def get_stream(
     Stremio stream endpoint for movies and series.
     """
 
-    base_url = str(request.base_url).rstrip("/")
+    base_url = settings.HOST_NAME
     update_path = f"/{token}/catalog/update/" if token else "/configure"
 
     return {

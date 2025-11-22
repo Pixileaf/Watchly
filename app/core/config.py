@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     AUTO_UPDATE_CATALOGS: bool = True
     CATALOG_REFRESH_INTERVAL_SECONDS: int = 21600  # 6 hours
     APP_ENV: Literal["development", "production"] = "development"
+    HOST_NAME: str = "https://1ccea4301587-watchly.baby-beamup.club"
 
     @property
     def TMDB_ADDON_URL(self) -> str:
