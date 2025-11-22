@@ -1,12 +1,17 @@
-import os
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 import logging
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.api.main import api_router
+from app.services.catalog_updater import BackgroundCatalogUpdater
+
 from .config import settings
 
 
@@ -22,11 +27,40 @@ class InterceptHandler(logging.Handler):
 
 logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
 
+# Global catalog updater instance
+catalog_updater: BackgroundCatalogUpdater | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manage application lifespan events (startup/shutdown).
+    """
+    global catalog_updater
+
+    # Startup
+    if settings.AUTO_UPDATE_CATALOGS and settings.CATALOG_REFRESH_INTERVAL_SECONDS > 0:
+        catalog_updater = BackgroundCatalogUpdater(interval_seconds=settings.CATALOG_REFRESH_INTERVAL_SECONDS)
+        catalog_updater.start()
+        logger.info(
+            "Background catalog updates enabled (interval=%ss)",
+            settings.CATALOG_REFRESH_INTERVAL_SECONDS,
+        )
+
+    yield
+
+    # Shutdown
+    if catalog_updater:
+        await catalog_updater.stop()
+        catalog_updater = None
+        logger.info("Background catalog updates stopped")
+
 
 app = FastAPI(
     title="Watchly",
     description="Stremio catalog addon for movie and series recommendations",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -39,21 +73,36 @@ app.add_middleware(
 
 # Serve static files
 # Static directory is at project root (3 levels up from app/core/app.py)
-static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# app/core/app.py -> app/core -> app -> root
+project_root = Path(__file__).resolve().parent.parent.parent
+static_dir = project_root / "static"
+
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
-# Serve index.html at /configure and /{encoded}/configure
-@app.get("/")
-@app.get("/configure")
-@app.get("/{encoded}/configure")
-async def configure_page(encoded: str = None):
-    index_path = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"message": "Watchly API is running. Static files not found."}
+# Serve index.html at /configure and /{token}/configure
+@app.get("/", response_class=HTMLResponse)
+@app.get("/configure", response_class=HTMLResponse)
+@app.get("/{token}/configure", response_class=HTMLResponse)
+async def configure_page(token: str | None = None):
+    index_path = static_dir / "index.html"
+    if index_path.exists():
+        html_content = index_path.read_text(encoding="utf-8")
+        dynamic_announcement = os.getenv("ANNOUNCEMENT_HTML")
+        if dynamic_announcement is None:
+            dynamic_announcement = settings.ANNOUNCEMENT_HTML
+        announcement_html = (dynamic_announcement or "").strip()
+        snippet = ""
+        if announcement_html:
+            snippet = '\n                <div class="announcement">' f"{announcement_html}" "</div>"
+        html_content = html_content.replace("<!-- ANNOUNCEMENT_HTML -->", snippet, 1)
+        return HTMLResponse(content=html_content, media_type="text/html")
+    return HTMLResponse(
+        content="Watchly API is running. Static files not found.",
+        media_type="text/plain",
+        status_code=200,
+    )
 
 
 app.include_router(api_router)
-

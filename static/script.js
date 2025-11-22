@@ -2,18 +2,25 @@ document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('configForm');
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
+    const authKeyInput = document.getElementById('authKey');
+    const authMethodSelect = document.getElementById('authMethod');
+    const credentialsFields = document.getElementById('credentialsFields');
+    const authKeyFieldWrapper = document.getElementById('authKeyField');
     const submitBtn = document.getElementById('submitBtn');
     const errorMessage = document.getElementById('errorMessage');
     const successMessage = document.getElementById('successMessage');
-    const addonUrlInput = document.getElementById('addonUrl');
+    const addonUrlBox = document.getElementById('addonUrl');
     const copyBtn = document.getElementById('copyBtn');
     const installDesktopBtn = document.getElementById('installDesktopBtn');
     const installWebBtn = document.getElementById('installWebBtn');
     const resetBtn = document.getElementById('resetBtn');
     const btnText = submitBtn.querySelector('.btn-text');
-    const btnLoader = submitBtn.querySelector('.btn-loader');
+    const btnLoader = submitBtn.querySelector('.loader');
+    const toggleButtons = document.querySelectorAll('.toggle-btn');
 
-    // Helper functions
+    // Store the raw URL string since div doesn't have .value
+    let generatedUrl = '';
+
     function showError(message) {
         errorMessage.textContent = message;
         errorMessage.style.display = 'block';
@@ -24,168 +31,161 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function setLoading(loading) {
+        submitBtn.disabled = loading;
         if (loading) {
-            submitBtn.disabled = true;
-            btnText.style.display = 'none';
-            btnLoader.style.display = 'inline';
+            btnText.classList.add('hidden');
+            btnLoader.classList.remove('hidden');
         } else {
-            submitBtn.disabled = false;
-            btnText.style.display = 'inline';
-            btnLoader.style.display = 'none';
+            btnText.classList.remove('hidden');
+            btnLoader.classList.add('hidden');
         }
     }
 
-    // Check if there's an encoded value in the URL path
-    function checkForEncodedCredentials() {
-        const path = window.location.pathname;
-        // Check if path matches /{encoded}/configure
-        const match = path.match(/^\/(.+)\/configure$/);
-        if (match && match[1]) {
-            const encoded = match[1];
-            try {
-                // Decode the credentials and config
-                const decoded = atob(encoded);
-                const config = JSON.parse(decoded);
-
-                if (config.username && config.password) {
-                    // Populate the form fields
-                    usernameInput.value = config.username;
-                    passwordInput.value = config.password;
-                    // Set recommendation source if available
-                    if (config.includeWatched !== undefined) {
-                        const sourceValue = config.includeWatched ? 'watched' : 'loved';
-                        const radio = document.querySelector(`input[name="recommendationSource"][value="${sourceValue}"]`);
-                        if (radio) {
-                            radio.checked = true;
-                            // Update visual state for browsers without :has() support
-                            radio.closest('.radio-label')?.classList.add('checked');
-                        }
-                    }
-                    // Optionally show a message that fields were pre-filled
-                    console.log('Credentials loaded from URL');
-                }
-            } catch (error) {
-                // Invalid encoding, ignore and show error
-                console.error('Failed to decode credentials from URL:', error);
-                showError('Invalid credentials in URL. Please enter your credentials manually.');
-            }
+    function updateMethodFields() {
+        const method = authMethodSelect.value;
+        if (method === 'credentials') {
+            credentialsFields.classList.remove('hidden');
+            authKeyFieldWrapper.classList.add('hidden');
+            usernameInput.required = true;
+            passwordInput.required = true;
+            authKeyInput.required = false;
+        } else {
+            credentialsFields.classList.add('hidden');
+            authKeyFieldWrapper.classList.remove('hidden');
+            usernameInput.required = false;
+            passwordInput.required = false;
+            authKeyInput.required = true;
         }
     }
 
-    // Check for encoded credentials on page load
-    checkForEncodedCredentials();
+    authMethodSelect.addEventListener('change', () => {
+        updateMethodFields();
+        hideError();
+    });
 
-    // Add visual feedback for radio buttons
-    const radioInputs = document.querySelectorAll('input[name="recommendationSource"]');
-    radioInputs.forEach(radio => {
-        radio.addEventListener('change', function() {
-            // Remove checked class from all labels
-            document.querySelectorAll('.radio-label').forEach(label => {
-                label.classList.remove('checked');
-            });
-            // Add checked class to selected label
-            if (this.checked) {
-                this.closest('.radio-label')?.classList.add('checked');
+    // Password/AuthKey Visibility Toggles
+    toggleButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = btn.dataset.target;
+            const input = document.getElementById(targetId);
+            if (input) {
+                const isPassword = input.type === 'password';
+                input.type = isPassword ? 'text' : 'password';
+                btn.textContent = isPassword ? 'Hide' : 'Show';
             }
         });
-        // Set initial state
-        if (radio.checked) {
-            radio.closest('.radio-label')?.classList.add('checked');
-        }
     });
+
+    // Help Alert for Auth Key
+    const showAuthHelp = document.getElementById('showAuthHelp');
+    if (showAuthHelp) {
+        showAuthHelp.addEventListener('click', (e) => {
+            e.preventDefault();
+            alert('To find your Auth Key:\n1. Go to web.strem.io\n2. Open Console (F12)\n3. Type: JSON.parse(localStorage.getItem("profile")).auth.key\n4. Copy the result (without quotes)');
+        });
+    }
 
     form.addEventListener('submit', async function (e) {
         e.preventDefault();
+        hideError();
 
+        const method = authMethodSelect.value;
         const username = usernameInput.value.trim();
         const password = passwordInput.value;
-        const recommendationSource = document.querySelector('input[name="recommendationSource"]:checked').value;
+        const authKey = authKeyInput.value.trim();
+        const includeWatched = document.querySelector('input[name="recommendationSource"]:checked').value === 'watched';
 
-        if (!username || !password) {
-            showError('Please fill in all fields');
+        // Client-side validation
+        if (method === 'credentials') {
+            if (!username || !password) {
+                showError('Please enter both email and password.');
+                return;
+            }
+        } else if (!authKey) {
+            showError('Please provide your Stremio Auth Key.');
             return;
         }
 
-        // Hide error, show loading
-        hideError();
         setLoading(true);
 
         try {
-            // Encode credentials and config
-            const config = {
-                username: username,
-                password: password,
-                includeWatched: recommendationSource === 'watched'
-            };
+            const response = await fetch('/tokens/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: method === 'credentials' ? username : null,
+                    password: method === 'credentials' ? password : null,
+                    authKey: method === 'authkey' ? authKey : null,
+                    includeWatched
+                })
+            });
 
-            const encoded = btoa(JSON.stringify(config));
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: 'Failed to create token.' }));
+                throw new Error(errorData.detail || 'Failed to connect. Check credentials.');
+            }
 
-            // Get current origin
-            const baseUrl = window.location.origin;
-            const addonUrl = `${baseUrl}/${encoded}/manifest.json`;
+            const data = await response.json();
+            generatedUrl = data.manifestUrl;
+            addonUrlBox.textContent = generatedUrl;
 
-            // Show success
-            addonUrlInput.value = addonUrl;
-            form.style.display = 'none';
+            form.classList.add('hidden');
             successMessage.style.display = 'block';
 
         } catch (error) {
-            showError('An error occurred. Please try again.');
             console.error('Error:', error);
+            showError(error.message);
         } finally {
             setLoading(false);
         }
     });
 
-    // Install on Stremio Desktop/Mobile
     installDesktopBtn.addEventListener('click', function () {
-        const addonUrl = addonUrlInput.value;
-        const stremioUrl = `stremio://${addonUrl.replace(/^https?:\/\//, '')}`;
+        if (!generatedUrl) return;
+        const stremioUrl = `stremio://${generatedUrl.replace(/^https?:\/\//, '')}`;
         window.location.href = stremioUrl;
     });
 
-    // Install on Stremio Web
     installWebBtn.addEventListener('click', function () {
-        const addonUrl = encodeURIComponent(addonUrlInput.value);
-        // Open Stremio web app with addon installation
-        const stremioWebUrl = `https://web.stremio.com/#/addons?addon=${addonUrl}`;
-        window.open(stremioWebUrl, '_blank');
+        if (!generatedUrl) return;
+        const stremioUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(generatedUrl)}`;
+        window.open(stremioUrl, '_blank');
     });
 
-    // Copy URL to clipboard
-    copyBtn.addEventListener('click', function () {
-        addonUrlInput.select();
-        addonUrlInput.setSelectionRange(0, 99999); // For mobile devices
+    copyBtn.addEventListener('click', async function () {
+        if (!generatedUrl) return;
 
         try {
-            navigator.clipboard.writeText(addonUrlInput.value).then(function () {
-                copyBtn.textContent = '✓ Copied!';
-                copyBtn.classList.add('copied');
+            await navigator.clipboard.writeText(generatedUrl);
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('btn-primary');
+            copyBtn.classList.remove('btn-outline');
 
-                setTimeout(function () {
-                    copyBtn.textContent = '📋 Copy URL';
-                    copyBtn.classList.remove('copied');
-                }, 2000);
-            });
-        } catch (err) {
-            // Fallback for older browsers
-            document.execCommand('copy');
-            copyBtn.textContent = '✓ Copied!';
-            copyBtn.classList.add('copied');
-
-            setTimeout(function () {
-                copyBtn.textContent = '📋 Copy URL';
-                copyBtn.classList.remove('copied');
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.classList.remove('btn-primary');
+                copyBtn.classList.add('btn-outline');
             }, 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            showError('Failed to copy to clipboard');
         }
     });
 
     resetBtn.addEventListener('click', function () {
         form.reset();
-        form.style.display = 'block';
+        authMethodSelect.value = 'credentials';
+        updateMethodFields();
+
+        form.classList.remove('hidden');
         successMessage.style.display = 'none';
         hideError();
-        usernameInput.focus();
+        generatedUrl = '';
+        addonUrlBox.textContent = '';
     });
-});
 
+    // Initialize
+    updateMethodFields();
+});

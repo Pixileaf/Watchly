@@ -1,6 +1,8 @@
 import os
+
 import uvicorn
-from app.core import app, settings
+
+from app.core.config import settings
 
 if __name__ == "__main__":
     PORT = os.getenv("PORT", settings.PORT)
