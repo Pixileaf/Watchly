@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from typing import Literal
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     TMDB_API_KEY: str
     PORT: int = 8000
     ADDON_ID: str = "com.bimal.watchly"
+    APP_ENV: Literal["development", "production"] = "development"
 
 
 settings = Settings()
+

@@ -1,62 +1,8 @@
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
-from fastapi.middleware.cors import CORSMiddleware
-from app.api.main import api_router
-# from app.config import settings
-import logging
-from loguru import logger
 import os
+import uvicorn
+from app.core import app, settings
 
-class InterceptHandler(logging.Handler):
-    def emit(self, record):
-        try:
-            level = logger.level(record.levelname).name
-        except Exception:
-            level = record.levelno
-
-        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
-
-
-logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
-
-
-app = FastAPI(
-    title="Watchly",
-    description="Stremio catalog addon for movie and series recommendations",
-    version="0.1.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Serve static files
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
-# Serve index.html at /configure and /{encoded}/configure
-@app.get("/")
-@app.get("/configure")
-@app.get("/{encoded}/configure")
-async def configure_page(encoded: str = None):
-    index_path = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"message": "Watchly API is running. Static files not found."}
-
-
-app.include_router(api_router)
-
-
-# if __name__ == "__main__":
-#     import uvicorn
-
-#     uvicorn.run("main:app", host="0.0.0.0", port=settings.PORT, reload=True)
+if __name__ == "__main__":
+    PORT = os.getenv("PORT", settings.PORT)
+    reload = settings.APP_ENV == "development"
+    uvicorn.run("app.core.app:app", host="0.0.0.0", port=int(PORT), reload=reload)
