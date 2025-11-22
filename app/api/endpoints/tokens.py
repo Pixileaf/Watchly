@@ -72,32 +72,6 @@ async def _verify_credentials_or_raise(payload: dict) -> str:
         await stremio_service.close()
 
 
-def _preferred_base_url(request: Request) -> str:
-    headers = request.headers
-
-    def _first_header_value(name: str) -> str | None:
-        raw = headers.get(name)
-        if not raw:
-            return None
-        # Some proxies send comma-separated lists for chained hops
-        return raw.split(",")[0].strip()
-
-    scheme = _first_header_value("x-forwarded-proto") or request.url.scheme
-    host = _first_header_value("x-forwarded-host") or headers.get("host") or request.url.netloc
-    prefix = _first_header_value("x-forwarded-prefix") or ""
-    root_path = request.scope.get("root_path", "")
-
-    base_path = f"{prefix}{root_path}".rstrip("/")
-    if base_path and not base_path.startswith("/"):
-        base_path = f"/{base_path}"
-
-    base_url = f"{scheme}://{host}"
-    if base_path:
-        base_url = f"{base_url}{base_path}"
-
-    return base_url.rstrip("/")
-
-
 @router.post("/", response_model=TokenResponse)
 async def create_token(payload: TokenRequest, request: Request) -> TokenResponse:
     username = payload.username.strip() if payload.username else None
@@ -155,7 +129,7 @@ async def create_token(payload: TokenRequest, request: Request) -> TokenResponse
                 status_code=502,
                 detail="Credentials verified, but Watchly couldn't refresh your catalogs yet. Please try again.",
             ) from exc
-    base_url = _preferred_base_url(request)
+    base_url = settings.HOST_NAME
     manifest_url = f"{base_url}/{token}/manifest.json"
 
     expires_in = settings.TOKEN_TTL_SECONDS if settings.TOKEN_TTL_SECONDS > 0 else None
