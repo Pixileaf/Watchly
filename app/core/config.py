@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     TMDB_API_KEY: str | None = None
     TMDB_API_URL: str = "https://api.themoviedb.org/3"
-    TMDB_ADDON_CONFIG_DICT = {
+    TMDB_ADDON_CONFIG_DICT: dict[str, str] = {
         "provideImdbId": "true",
         "returnImdbId": "true",
         "language": "en-US",
