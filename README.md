@@ -1,6 +1,6 @@
+# Watchly
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/I2I81OVJEH)
 [![PayPal](https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://www.paypal.com/donate/?hosted_button_id=KRQMVS34FC5KC)
-# Watchly
 
 **Watchly** is a Stremio catalog addon that provides personalized movie and series recommendations based on your Stremio library. It uses The Movie Database (TMDB) API to generate intelligent recommendations from the content you've watched and loved.
 
@@ -66,15 +66,7 @@ Watchly is a FastAPI-based Stremio addon that:
    ```
    TMDB_API_KEY=your_tmdb_api_key_here
    PORT=8000
-   ADDON_ID=com.bimal.watchly
-   ADDON_NAME=Watchly
-   REDIS_URL=redis://redis:6379/0
-   TOKEN_SALT=replace-with-long-random-string
-   # 0 means tokens never expire
-   TOKEN_TTL_SECONDS=0
-   TMDB_ADDON_URL=https://94c8cb9f702d-tmdb-addon.baby-beamup.club/N4IgTgDgJgRg1gUwJ4gFwgC4AYC0AzMBBHSWEAGhAjAHsA3ASygQEkBbWFqNTMAVwQVwCDHzAA7dp27oM-QZQA2AQ3EBzPsrWD0CcTgCqAZSEBnOQmVsG6tAG0AupQDGyjMsU01p+05CnLMGcACwBRcWUYRQQZEDwPAKFXcwBhGj5xDDQAVkpTYJoAdwBBbQAlNxs1FnEAcT1CH1l5IT1I6NKECowqnjkBMwKS8sr1AHUGDGCpGG7e9HjFRIBfIA
-   # Optional HTML for configuration banner announcements
-   ANNOUNCEMENT_HTML=
+   ...
    ```
 
 4. **Start the application:**
@@ -87,23 +79,6 @@ Watchly is a FastAPI-based Stremio addon that:
    - Configuration page: `http://localhost:8000/configure`
    - API Documentation: `http://localhost:8000/docs`
 
-#### Using Docker Only
-
-1. **Build the image:**
-   ```bash
-   docker build -t watchly .
-   ```
-
-2. **Run the container:**
-   ```bash
-   docker run -d \
-     --name watchly \
-     -p 8000:8000 \
-     -e TMDB_API_KEY=your_tmdb_api_key_here \
-     -e PORT=8000 \
-     -e ADDON_ID=com.bimal.watchly \
-     watchly
-   ```
 
 ### Option 2: Manual Installation
 
@@ -113,55 +88,27 @@ Watchly is a FastAPI-based Stremio addon that:
    cd Watchly
    ```
 
-2. **Create a virtual environment (recommended):**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Set environment variables:**
-   
+2. **Set environment variables:**
    Create a `.env` file in the project root:
    ```
    TMDB_API_KEY=your_tmdb_api_key_here
    PORT=8000
-   ADDON_ID=com.bimal.watchly
-   ADDON_NAME=Watchly
-   REDIS_URL=redis://localhost:6379/0
-   TOKEN_SALT=replace-with-long-random-string
-   TOKEN_TTL_SECONDS=0
-   TMDB_ADDON_URL=https://94c8cb9f702d-tmdb-addon.baby-beamup.club/N4IgTgDgJgRg1gUwJ4gFwgC4AYC0AzMBBHSWEAGhAjAHsA3ASygQEkBbWFqNTMAVwQVwCDHzAA7dp27oM-QZQA2AQ3EBzPsrWD0CcTgCqAZSEBnOQmVsG6tAG0AupQDGyjMsU01p+05CnLMGcACwBRcWUYRQQZEDwPAKFXcwBhGj5xDDQAVkpTYJoAdwBBbQAlNxs1FnEAcT1CH1l5IT1I6NKECowqnjkBMwKS8sr1AHUGDGCpGG7e9HjFRIBfIA
-   ANNOUNCEMENT_HTML=
-   ```
-   
-   Or export them in your shell:
-   ```bash
-   export TMDB_API_KEY=your_tmdb_api_key_here
-   export PORT=8000
-   export ADDON_ID=com.bimal.watchly
-   export ADDON_NAME=Watchly
-   export ANNOUNCEMENT_HTML=""
+   ...
    ```
 
-5. **Run the application:**
+3. **Install UV and Run app (recommended):**
+- [Installation Instructions](https://docs.astral.sh/uv/getting-started/installation/)
    ```bash
-   uvicorn app.core.app:app --host 0.0.0.0 --port 8000
+   uv run main.py
    ```
 
-   Or using Python directly:
-   ```bash
-   python main.py
-   ```
-
-6. **Access the application:**
+4. **Access the application:**
    - API: `http://localhost:8000`
    - Configuration page: `http://localhost:8000/configure`
    - API Documentation: `http://localhost:8000/docs`
+
+
+*You Can also create virtual environment and install dependencies from requirements.txt and run the app*
 
 ## Configuration
 
@@ -185,7 +132,7 @@ Watchly is a FastAPI-based Stremio addon that:
 
 Use the web interface at `/configure` to provision a secure access token:
 
-1. Provide either your **Stremio username/password** *or* an **existing `authKey`** (copy from `localStorage.authKey` in `web.strem.io`).
+1. Provide either your **Stremio username/password** *or* an **existing `authKey`** (copy from `localStorage.authKey` in [https://web.stremio.com/](https://web.stremio.com/)).
 2. Choose whether to base recommendations on loved items only or include everything you've watched.
 3. Watchly verifies the credentials/auth key with Stremio, performs the first catalog refresh in the background, and only then stores the payload inside Redis.
 4. Your manifest URL becomes `https://<host>/<token>/manifest.json`. Only this token ever appears in URLs.
@@ -248,7 +195,7 @@ Watchly/
 ### Running in Development Mode
 
 ```bash
-uvicorn app.core.app:app --reload --host 0.0.0.0 --port 8000
+uv run main.py --dev
 ```
 
 Or using Python directly (with auto-reload based on APP_ENV):
