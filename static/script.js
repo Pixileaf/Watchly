@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializePasswordToggles();
     initializeAuthHelp();
     initializeStremioLogin();
+    initializeFooter();
 });
 
 // Language Selection
@@ -229,9 +230,9 @@ function createCatalogItem(cat, index) {
     const isRenamable = cat.id === 'watchly.rec';
 
     item.innerHTML = `
-        <div class="flex items-center gap-4">
+        <div class="flex items-start gap-3 sm:items-center sm:gap-4">
             <!-- Sort Buttons -->
-            <div class="sort-buttons flex flex-col gap-1">
+            <div class="sort-buttons flex flex-col gap-1 flex-shrink-0 mt-0.5 sm:mt-0">
                 <button type="button" class="action-btn move-up p-1 text-slate-500 hover:text-white hover:bg-slate-700 rounded transition disabled:opacity-30 disabled:hover:bg-transparent" title="Move up" ${index === 0 ? 'disabled' : ''}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M18 15l-6-6-6 6"/>
@@ -244,31 +245,38 @@ function createCatalogItem(cat, index) {
                 </button>
             </div>
 
-            <!-- Name & Rename -->
-            <div class="name-container flex-grow relative flex items-center min-w-0 h-9">
-                <span class="catalog-name-text font-medium text-white truncate cursor-default w-full">${escapeHtml(cat.name)}</span>
-                <input
-                    type="text"
-                    class="catalog-name-input hidden absolute inset-0 w-full bg-slate-900 border border-blue-500 rounded-lg px-3 text-white outline-none text-sm font-medium shadow-sm"
-                    value="${escapeHtml(cat.name)}"
-                >
-                ${isRenamable ? `
-                <button type="button" class="action-btn rename-btn ml-2 p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition opacity-0 group-hover:opacity-100 focus:opacity-100" title="Rename">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                </button>
-                ` : ''}
+            <!-- Content Area -->
+            <div class="flex-grow min-w-0 space-y-1 sm:space-y-0 sm:flex sm:items-center sm:gap-4">
+                <!-- Name & Rename -->
+                <div class="name-container relative flex items-center min-w-0 h-auto sm:h-9 flex-grow">
+                    <span class="catalog-name-text font-medium text-white break-words leading-snug sm:truncate cursor-default w-full">${escapeHtml(cat.name)}</span>
+                    <input
+                        type="text"
+                        class="catalog-name-input hidden absolute inset-0 w-full bg-slate-900 border border-blue-500 rounded-lg px-3 text-white outline-none text-sm font-medium shadow-sm"
+                        value="${escapeHtml(cat.name)}"
+                    >
+                    ${isRenamable ? `
+                    <button type="button" class="action-btn rename-btn ml-2 p-1.5 flex-shrink-0 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100" title="Rename">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </button>
+                    ` : ''}
+                </div>
+
+                <!-- Description Mobile (Hidden on Desktop to maintain layout if preferred, or show below) -->
+                <div class="catalog-desc sm:hidden text-xs text-slate-500 leading-relaxed">${escapeHtml(cat.description || '')}</div>
             </div>
 
             <!-- Toggle Switch -->
-            <label class="switch relative inline-flex items-center cursor-pointer flex-shrink-0">
+            <label class="switch relative inline-flex items-center cursor-pointer flex-shrink-0 ml-auto sm:ml-0">
                 <input type="checkbox" class="sr-only peer" ${cat.enabled ? 'checked' : ''} data-catalog-id="${cat.id}">
                 <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
         </div>
-        <div class="catalog-desc text-xs text-slate-500 mt-2 ml-8 pl-1">${escapeHtml(cat.description || '')}</div>
+        <!-- Description Desktop -->
+        <div class="catalog-desc hidden sm:block text-xs text-slate-500 mt-2 ml-8 pl-1">${escapeHtml(cat.description || '')}</div>
     `;
 
     if (isRenamable) {
@@ -312,7 +320,7 @@ function setupRenameLogic(item, cat) {
 
     // Create edit action buttons dynamically (Tailwind styled)
     const editActions = document.createElement('div');
-    editActions.className = 'edit-actions hidden absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 bg-slate-900 pl-2'; // hidden by default
+    editActions.className = 'edit-actions hidden absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 bg-slate-900 pl-2 z-10'; // hidden by default
     editActions.innerHTML = `
         <button type="button" class="edit-btn save p-1 text-green-500 hover:bg-green-500/10 rounded transition" title="Save">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -565,4 +573,12 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Footer Year
+function initializeFooter() {
+    const yearSpan = document.getElementById('currentYear');
+    if (yearSpan) {
+        yearSpan.textContent = new Date().getFullYear();
+    }
 }
