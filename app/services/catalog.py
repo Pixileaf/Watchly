@@ -4,6 +4,7 @@ from collections import Counter
 from loguru import logger
 
 from app.core.settings import UserSettings
+from app.services.scoring import ScoringService
 from app.services.stremio_service import StremioService
 from app.services.tmdb_service import TMDBService
 
@@ -11,10 +12,14 @@ from .tmdb.genre import MOVIE_GENRE_TO_ID_MAP, SERIES_GENRE_TO_ID_MAP
 
 
 class DynamicCatalogService:
+    """
+    Generates dynamic catalog rows based on user library and preferences.
+    """
 
     def __init__(self, stremio_service: StremioService):
         self.stremio_service = stremio_service
         self.tmdb_service = TMDBService()
+        self.scoring_service = ScoringService()
 
     @staticmethod
     def normalize_type(type_):
@@ -27,71 +32,84 @@ class DynamicCatalogService:
             catalog_id = f"{config_id}.{item_id}"
         else:
             catalog_id = item_id
+
+        name = item.get("name")
+        # Truncate long names for cleaner UI
+        if len(name) > 25:
+            name = name[:25] + "..."
+
         return {
             "type": self.normalize_type(item.get("type")),
             "id": catalog_id,
-            "name": f"{label} {item.get('name')}",
+            "name": f"{label} {name}",
             "extra": [],
         }
 
-    def process_items(self, items, seen_items, seed, label, config_id):
-        entries = []
-        for item in items:
-            type_ = self.normalize_type(item.get("type"))
-            if item.get("_id") in seen_items or seed[type_]:
-                continue
-            seen_items.add(item.get("_id"))
-            seed[type_] = True
-            entries.append(self.build_catalog_entry(item, label, config_id))
-        return entries
-
-    async def get_watched_loved_catalogs(self, library_items: list[dict], user_settings: UserSettings | None = None):
-        seen_items = set()
+    async def get_dynamic_catalogs(
+        self, library_items: list[dict], user_settings: UserSettings | None = None
+    ) -> list[dict]:
+        """
+        Generate all dynamic catalog rows:
+        1. Because you watched X
+        2. Because you loved X
+        3. Genre rows
+        """
         catalogs = []
 
-        seed = {
-            "watched": {
-                "movie": False,
-                "series": False,
-            },
-            "loved": {
-                "movie": False,
-                "series": False,
-            },
-        }
+        # 1. Interaction-based rows (Because you watched/loved)
+        # We pick the TOP 2 most relevant items to show "Because you watched" rows for
+        # This prevents spamming the user with 50 rows
 
-        loved_items = library_items.get("loved", [])
-        watched_items = library_items.get("watched", [])
+        # Score all items to find the best "Source" items
+        all_items = library_items.get("loved", []) + library_items.get("watched", [])
 
-        # Determine labels and enablement from settings
-        loved_label = "Because you Loved"
-        watched_label = "Because you Watched"
-        loved_enabled = True
-        watched_enabled = True
+        # Deduplicate
+        unique_items = {item["_id"]: item for item in all_items}
+        processed_items = []
+        for item_data in unique_items.values():
+            # Use process_item to get a full ScoredItem object
+            scored_item_obj = self.scoring_service.process_item(item_data)
 
-        if user_settings:
-            loved_config = next((c for c in user_settings.catalogs if c.id == "watchly.loved"), None)
-            watched_config = next((c for c in user_settings.catalogs if c.id == "watchly.watched"), None)
+            # We need a dict structure for the rest of the legacy code for now,
+            # or we can attach the score to the dict.
+            # Let's attach the score to the original dict for minimal disruption to this method's flow
+            item_data["_interest_score"] = scored_item_obj.score
+            processed_items.append(item_data)
 
-            if loved_config:
-                loved_enabled = loved_config.enabled
-                if loved_config.name:
-                    loved_label = loved_config.name
+        # Sort by score
+        processed_items.sort(key=lambda x: x["_interest_score"], reverse=True)
 
-            if watched_config:
-                watched_enabled = watched_config.enabled
-                if watched_config.name:
-                    watched_label = watched_config.name
+        # Pick top items for "Because you..." rows
+        # We only want to show maybe 1 or 2 of these specific rows per refresh to keep it fresh
+        # For now, let's pick the top 1 Movie and top 1 Series
+        top_movie = next((i for i in processed_items if i["type"] == "movie"), None)
+        top_series = next((i for i in processed_items if i["type"] == "series"), None)
 
-        if loved_enabled:
-            catalogs += self.process_items(loved_items, seen_items, seed["loved"], loved_label, "watchly.loved")
+        candidates = []
+        if top_movie:
+            candidates.append(top_movie)
+        if top_series:
+            candidates.append(top_series)
 
-        if watched_enabled:
-            catalogs += self.process_items(
-                watched_items, seen_items, seed["watched"], watched_label, "watchly.watched"
-            )
+        for item in candidates:
+            # Decide label based on status
+            is_loved = item.get("_is_loved", False)
+            label = "Because you Loved" if is_loved else "Because you Watched"
+            row_id = "watchly.loved" if is_loved else "watchly.watched"
+
+            catalogs.append(self.build_catalog_entry(item, label, row_id))
+
+        # 2. Genre-based rows
+        genre_catalogs = await self.get_genre_based_catalogs(library_items, user_settings)
+        catalogs += genre_catalogs
 
         return catalogs
+
+    async def get_watched_loved_catalogs(self, library_items: list[dict], user_settings: UserSettings | None = None):
+        """Legacy compatibility wrapper - redirects to get_dynamic_catalogs"""
+        # Only called by the old update flow, we can redirect or keep minimal logic
+        # For the new architecture, we want to merge this logic.
+        return await self.get_dynamic_catalogs(library_items, user_settings)
 
     async def _get_item_genres(self, item_id: str, item_type: str) -> list[str]:
         """Fetch genres for a specific item from TMDB."""

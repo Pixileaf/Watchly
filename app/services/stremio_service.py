@@ -6,8 +6,12 @@ from loguru import logger
 from app.core.config import settings
 
 BASE_CATALOGS = [
-    {"type": "movie", "id": "watchly.rec", "name": "Recommended", "extra": []},
-    {"type": "series", "id": "watchly.rec", "name": "Recommended", "extra": []},
+    {"type": "movie", "id": "watchly.rec", "name": "Top Picks for You", "extra": []},
+    {"type": "series", "id": "watchly.rec", "name": "Top Picks for You", "extra": []},
+    {"type": "movie", "id": "watchly.trending", "name": "Trending Movies", "extra": []},
+    {"type": "series", "id": "watchly.trending", "name": "Trending Series", "extra": []},
+    {"type": "movie", "id": "watchly.gems", "name": "Hidden Gems", "extra": []},
+    {"type": "series", "id": "watchly.gems", "name": "Hidden Gems", "extra": []},
 ]
 
 
@@ -101,10 +105,13 @@ class StremioService:
             raise ValueError("Failed to obtain Stremio auth key")
         return auth_key
 
-    async def is_loved(self, auth_key: str, imdb_id: str, media_type: str) -> bool:
-        """Check if user has loved a movie or series."""
+    async def is_loved(self, auth_key: str, imdb_id: str, media_type: str) -> tuple[bool, bool]:
+        """
+        Check if user has loved or liked a movie or series.
+        Returns: (is_loved, is_liked)
+        """
         if not imdb_id.startswith("tt"):
-            return False
+            return False, False
         url = "https://likes.stremio.com/api/get_status"
         params = {
             "authToken": auth_key,
@@ -117,16 +124,18 @@ class StremioService:
             result = await client.get(url, params=params)
             result.raise_for_status()
             status = result.json().get("status", "")
-            if status and status.lower() == "loved":
-                return True
-            else:
-                return False
+            # Stremio returns "loved" for loved items
+            # We assume there might be a "liked" status or we can infer based on user input
+            # For now, the API mainly returns 'loved' or nothing.
+            # If the user mentioned a specific "liked" signal, it might be a different value or endpoint.
+            # Assuming "liked" is a valid return value for now based on user query.
+            return (status == "loved", status == "liked")
         except Exception as e:
             logger.error(
                 f"Error checking if user has loved a movie or series: {e}",
                 exc_info=True,
             )
-            return False
+            return False, False
 
     async def get_library_items(self) -> dict[str, list[dict]]:
         """
@@ -206,8 +215,12 @@ class StremioService:
                 )
 
                 # Process results
-                for item, is_loved_status in zip(check_candidates, loved_statuses):
-                    if is_loved_status:
+                for item, (is_loved_status, is_liked_status) in zip(check_candidates, loved_statuses):
+                    if is_loved_status or is_liked_status:
+                        # Store status on item for scoring later
+                        item["_is_loved"] = is_loved_status
+                        item["_is_liked"] = is_liked_status
+
                         loved_items.append(item)
                         if item.get("type") == "movie":
                             movies_found += 1
@@ -218,31 +231,8 @@ class StremioService:
                 f"Found {len(loved_items)} loved library items (Movies: {movies_found}, Series: {series_found})"
             )
 
-            # Format watched items
-            formatted_watched = []
-            for item in watched_items:
-                formatted_watched.append(
-                    {
-                        "type": item.get("type"),
-                        "_id": item.get("_id"),
-                        "_mtime": item.get("_mtime", ""),
-                        "name": item.get("name"),
-                    }
-                )
-
-            # Format loved items (they are already somewhat sorted by discovery order, which aligns with mtime)
-            formatted_loved = []
-            for item in loved_items:
-                formatted_loved.append(
-                    {
-                        "type": item.get("type"),
-                        "_id": item.get("_id"),
-                        "_mtime": item.get("_mtime", ""),
-                        "name": item.get("name"),
-                    }
-                )
-
-            return {"watched": formatted_watched, "loved": formatted_loved}
+            # Return raw items; ScoringService will handle Pydantic conversion
+            return {"watched": watched_items, "loved": loved_items}
         except Exception as e:
             logger.error(f"Error fetching library items: {e}", exc_info=True)
             return {"watched": [], "loved": []}

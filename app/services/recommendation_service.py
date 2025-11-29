@@ -3,8 +3,11 @@ from urllib.parse import unquote
 
 from loguru import logger
 
+from app.services.discovery import DiscoveryEngine
+from app.services.scoring import ScoringService
 from app.services.stremio_service import StremioService
 from app.services.tmdb_service import TMDBService
+from app.services.user_profile import UserProfileService
 
 
 def _parse_identifier(identifier: str) -> tuple[str | None, int | None]:
@@ -36,13 +39,7 @@ def _parse_identifier(identifier: str) -> tuple[str | None, int | None]:
 class RecommendationService:
     """
     Service for generating recommendations based on user's Stremio library.
-
-    The recommendation flow:
-    1. Get user's loved and watched items from Stremio library
-    2. Use loved items as "source items" to find similar content from TMDB
-    3. Filter out items already in the user's watched library
-    4. Fetch full metadata from TMDB
-    5. Return formatted recommendations
+    Implements a Hybrid Recommendation System (Similarity + Discovery).
     """
 
     def __init__(self, stremio_service: StremioService | None = None):
@@ -50,7 +47,70 @@ class RecommendationService:
             raise ValueError("StremioService instance is required for personalized recommendations")
         self.tmdb_service = TMDBService()
         self.stremio_service = stremio_service
+        self.scoring_service = ScoringService()
+        self.user_profile_service = UserProfileService()
+        self.discovery_engine = DiscoveryEngine()
         self.per_item_limit = 20
+
+    async def _get_exclusion_sets(self, content_type: str | None = None) -> tuple[set[str], set[int]]:
+        """
+        Fetch library items and build strict exclusion sets for watched content.
+        Returns (watched_imdb_ids, watched_tmdb_ids)
+        """
+        # Always fetch fresh library to ensure we don't recommend what was just watched
+        library_data = await self.stremio_service.get_library_items()
+        # Combine loved and watched - both implies user has seen/interacted
+        all_items = library_data.get("loved", []) + library_data.get("watched", [])
+
+        imdb_ids = set()
+        tmdb_ids = set()
+
+        for item in all_items:
+            # Optional: filter by type if provided, but safer to exclude all types to avoid cross-contamination
+            # if content_type and item.get("type") != content_type: continue
+
+            item_id = item.get("_id", "")
+            imdb_id, tmdb_id = _parse_identifier(item_id)
+
+            if imdb_id:
+                imdb_ids.add(imdb_id)
+            if tmdb_id:
+                tmdb_ids.add(tmdb_id)
+
+            # Also handle raw IDs if parse failed but it looks like one
+            if item_id.startswith("tt"):
+                imdb_ids.add(item_id)
+            elif item_id.startswith("tmdb:"):
+                try:
+                    tmdb_ids.add(int(item_id.split(":")[1]))
+                except Exception:
+                    pass
+
+        return imdb_ids, tmdb_ids
+
+    async def _filter_candidates(
+        self, candidates: list[dict], watched_imdb_ids: set[str], watched_tmdb_ids: set[int]
+    ) -> list[dict]:
+        """
+        Filter candidates against watched sets using TMDB ID first, then IMDB ID (if available).
+        """
+        filtered = []
+        for item in candidates:
+            tmdb_id = item.get("id")
+            # 1. Check TMDB ID (Fast)
+            if tmdb_id and (
+                tmdb_id in watched_tmdb_ids or f"tmdb:{tmdb_id}" in watched_imdb_ids
+            ):  # check both sets just in case
+                continue
+
+            # 2. Check external IDs (if present in candidate)
+            external_ids = item.get("external_ids", {})
+            imdb_id = external_ids.get("imdb_id")
+            if imdb_id and imdb_id in watched_imdb_ids:
+                continue
+
+            filtered.append(item)
+        return filtered
 
     async def _fetch_metadata_for_items(self, items: list[dict], media_type: str) -> list[dict]:
         """
@@ -114,6 +174,8 @@ class RecommendationService:
                 "releaseInfo": year,
                 "imdbRating": str(details.get("vote_average", "")),
                 "genres": [g.get("name") for g in details.get("genres", [])],
+                # pass internal external_ids for post-filtering if needed
+                "_external_ids": external_ids,
             }
 
             # Add runtime if available (Movie) or episode run time (TV)
@@ -131,11 +193,18 @@ class RecommendationService:
     async def get_recommendations_for_item(self, item_id: str) -> list[dict]:
         """
         Get recommendations for a specific item by IMDB ID.
-
-        This is used when user clicks on a specific item to see "similar" recommendations.
-        No library filtering is applied - we show all recommendations.
+        STRICT FILTERING: Excludes watched items.
         """
-        # Convert IMDB ID to TMDB ID (needed for TMDB recommendations API)
+        # Fetch Exclusion Sets first
+        watched_imdb, watched_tmdb = await self._get_exclusion_sets()
+
+        # Ensure the source item itself is excluded
+        if item_id.startswith("tt"):
+            watched_imdb.add(item_id)
+        elif item_id.startswith("tmdb:"):
+            watched_tmdb.add(int(item_id.split(":")[1]))
+
+        # Convert IMDB ID to TMDB ID
         if item_id.startswith("tt"):
             tmdb_id, media_type = await self.tmdb_service.find_by_imdb_id(item_id)
             if not tmdb_id:
@@ -143,22 +212,45 @@ class RecommendationService:
                 return []
         else:
             tmdb_id = item_id.split(":")[1]
-            # Default to movie if we can't determine type from ID
-            media_type = "movie"
+            media_type = "movie"  # Default
 
-        # Safety check
         if not media_type:
             media_type = "movie"
 
-        # Get recommendations (empty sets mean no library filtering)
-        recommendations = await self._fetch_recommendations_from_tmdb(str(tmdb_id), media_type, self.per_item_limit)
+        # Fetch more candidates to account for filtering
+        # We want 20 final, so fetch 40
+        buffer_limit = self.per_item_limit * 2
+        recommendations = await self._fetch_recommendations_from_tmdb(str(tmdb_id), media_type, buffer_limit)
 
         if not recommendations:
-            logger.warning(f"No recommendations found for {item_id}")
             return []
 
-        logger.info(f"Found {len(recommendations)} recommendations for {item_id}")
-        return await self._fetch_metadata_for_items(recommendations, media_type)
+        # 1. Filter by TMDB ID
+        recommendations = await self._filter_candidates(recommendations, watched_imdb, watched_tmdb)
+
+        # 2. Fetch Metadata (gets IMDB IDs)
+        meta_items = await self._fetch_metadata_for_items(recommendations, media_type)
+
+        # 3. Strict Filter by IMDB ID (using metadata)
+        final_items = []
+        for item in meta_items:
+            # check ID (stremio_id) which is usually imdb_id
+            if item["id"] in watched_imdb:
+                continue
+            # check hidden external_ids if available
+            ext_ids = item.get("_external_ids", {})
+            if ext_ids.get("imdb_id") in watched_imdb:
+                continue
+
+            # Clean up internal fields
+            item.pop("_external_ids", None)
+            final_items.append(item)
+
+            if len(final_items) >= self.per_item_limit:
+                break
+
+        logger.info(f"Found {len(final_items)} valid recommendations for {item_id}")
+        return final_items
 
     async def _fetch_recommendations_from_tmdb(self, item_id: str, media_type: str, limit: int) -> list[dict]:
         """
@@ -170,7 +262,6 @@ class RecommendationService:
         if item_id.startswith("tt"):
             tmdb_id, detected_type = await self.tmdb_service.find_by_imdb_id(item_id)
             if not tmdb_id:
-                logger.warning(f"No TMDB ID found for {item_id}")
                 return []
             if detected_type:
                 media_type = detected_type
@@ -188,187 +279,194 @@ class RecommendationService:
     async def get_recommendations(
         self,
         content_type: str | None = None,
-        source_items_limit: int = 2,
-        recommendations_per_source: int = 5,
-        max_results: int = 50,
+        source_items_limit: int = 5,
+        max_results: int = 20,
         include_watched: bool = False,
     ) -> list[dict]:
         """
-        Get recommendations based on user's Stremio library.
-
-        Process:
-        1. Get user's loved items from library (these are "source items" we use to find similar content)
-        2. If include_watched is True, also include watched items as source items
-        3. Get user's watched items (these will be excluded from recommendations)
-        4. For each source item, fetch recommendations from TMDB
-        5. Filter out items already watched
-        6. Aggregate and deduplicate recommendations
-        7. Sort by relevance score
-        8. Fetch full metadata for final list
-
-        Args:
-            content_type: "movie" or "series"
-            source_items_limit: How many items to use as sources (default: 2)
-            recommendations_per_source: How many recommendations per source item (default: 5)
-            max_results: Maximum total recommendations to return (default: 50)
-            include_watched: If True, include watched items as source items in addition to loved items (default: False)
+        Get Smart Hybrid Recommendations.
         """
         if not content_type:
             logger.warning("content_type must be specified (movie or series)")
             return []
 
-        logger.info(f"Getting recommendations for {content_type} (include_watched: {include_watched})")
+        logger.info(f"Starting Hybrid Recommendation Pipeline for {content_type}")
 
-        # Step 1: Fetch user's library items (both watched and loved)
+        # Step 1: Fetch & Score User Library
         library_data = await self.stremio_service.get_library_items()
-        loved_items = library_data.get("loved", [])
-        watched_items = library_data.get("watched", [])
+        all_items = library_data.get("loved", []) + library_data.get("watched", [])
 
-        # Step 2: Build source items list based on config
-        if include_watched:
-            all_source_items = watched_items
-            logger.info(f"Using watched items ({len(watched_items)}) as sources")
-        else:
-            # Only use loved items
-            all_source_items = loved_items
-            logger.info(f"Using only loved items ({len(loved_items)}) as sources")
+        # Build Exclusion Sets explicitly
+        watched_imdb_ids, watched_tmdb_ids = await self._get_exclusion_sets()
 
-        if not all_source_items:
-            logger.warning(
-                f"No {'loved or watched' if include_watched else 'loved'} library items found, returning empty"
-                " recommendations"
-            )
-            return []
+        # Deduplicate and Filter by Type
+        unique_items = {item["_id"]: item for item in all_items if item.get("type") == content_type}
+        processed_items = []
+        scored_objects = []
 
-        # Step 3: Filter source items by content type (only use movies for movie recommendations)
-        source_items_of_type = [item for item in all_source_items if item.get("type") == content_type]
+        # OPTIMIZATION: Limit source items for profile building to recent history (last 30 items)
+        sorted_history = sorted(unique_items.values(), key=lambda x: x.get("_mtime", ""), reverse=True)
+        recent_history = sorted_history[:30]
 
-        if not source_items_of_type:
-            logger.warning(f"No {content_type} items found in library")
-            return []
+        for item_data in recent_history:
+            scored_obj = self.scoring_service.process_item(item_data)
+            scored_objects.append(scored_obj)
+            item_data["_interest_score"] = scored_obj.score
+            processed_items.append(item_data)
 
-        # Step 4: Select most recent items as "source items" for finding recommendations
-        # (These are the items we'll use to find similar content)
-        # Sort by modification time (most recent first) if available
-        source_items_of_type.sort(key=lambda x: x.get("_mtime", ""), reverse=True)
-        source_items = source_items_of_type[:source_items_limit]
-        logger.info(f"Using {len(source_items)} most recent {content_type} items as sources")
+        processed_items.sort(key=lambda x: x["_interest_score"], reverse=True)
+        top_source_items = processed_items[:source_items_limit]
 
-        # Step 4: Build exclusion sets (IMDB IDs and TMDB IDs) for watched items
-        # We don't want to recommend things the user has already watched
-        watched_imdb_ids: set[str] = set()
-        watched_tmdb_ids: set[int] = set()
-        for item in watched_items:
-            imdb_id, tmdb_id = _parse_identifier(item.get("_id", ""))
-            if imdb_id:
-                watched_imdb_ids.add(imdb_id)
-            if tmdb_id:
-                watched_tmdb_ids.add(tmdb_id)
+        # --- Candidate Set A: Item-based Similarity ---
+        tasks_a = []
+        for source in top_source_items:
+            tasks_a.append(self._fetch_recommendations_from_tmdb(source.get("_id"), source.get("type"), limit=10))
 
-        logger.info(f"Built exclusion sets: {len(watched_imdb_ids)} IMDB IDs, {len(watched_tmdb_ids)} TMDB IDs")
+        # --- Candidate Set B: Profile-based Discovery ---
+        user_profile = await self.user_profile_service.build_user_profile(scored_objects)
+        task_b = self.discovery_engine.discover_recommendations(user_profile, content_type, limit=20)
 
-        # Step 5: Process each source item in parallel to get recommendations
-        # Each source item will generate its own set of recommendations
-        recommendation_tasks = [
-            self._fetch_recommendations_from_tmdb(
-                source_item.get("_id"),
-                source_item.get("type"),
-                recommendations_per_source,
-            )
-            for source_item in source_items
-        ]
-        all_recommendation_results = await asyncio.gather(*recommendation_tasks, return_exceptions=True)
+        # Execute all fetches
+        all_results = await asyncio.gather(task_b, *tasks_a, return_exceptions=True)
 
-        # Step 6: Aggregate recommendations from all source items
-        # Use dictionary to deduplicate by IMDB ID and combine scores
-        unique_recommendations: dict[str, dict] = {}  # Key: IMDB ID, Value: Full recommendation data
+        discovery_candidates = all_results[0] if isinstance(all_results[0], list) else []
+        similarity_batches = all_results[1:]
 
-        flat_recommendations = []
-        for recommendation_batch in all_recommendation_results:
-            if isinstance(recommendation_batch, Exception):
-                logger.warning(f"Error processing source item: {recommendation_batch}")
+        # --- Combine & Deduplicate ---
+        candidate_pool = {}  # tmdb_id -> item_dict
+
+        for item in discovery_candidates:
+            candidate_pool[item["id"]] = item
+
+        for batch in similarity_batches:
+            if isinstance(batch, list):
+                for item in batch:
+                    candidate_pool[item["id"]] = item
+
+        # --- Re-Ranking & Filtering ---
+        ranked_candidates = []
+
+        for tmdb_id, item in candidate_pool.items():
+            # 1. Strict Filter by TMDB ID
+            if tmdb_id in watched_tmdb_ids or f"tmdb:{tmdb_id}" in watched_imdb_ids:
                 continue
 
-            for recommendation in recommendation_batch:
-                flat_recommendations.append(recommendation)
+            sim_score = self.user_profile_service.calculate_similarity(user_profile, item)
+            vote_average = item.get("vote_average", 0)
+            popularity = item.get("popularity", 0)
+            import math
 
-        # Step 7: Deduplicate and filter BEFORE fetching full meta
-        filtered_tmdb_items = []
-        seen_tmdb_ids = set()
+            pop_score = math.log(popularity + 1) if popularity > 0 else 0
 
-        for item in flat_recommendations:
-            tmdb_id = item.get("id")
-            if not tmdb_id or tmdb_id in seen_tmdb_ids or tmdb_id in watched_tmdb_ids:
+            final_score = (sim_score * 0.7) + (vote_average * 0.2) + (pop_score * 0.1)
+            ranked_candidates.append((final_score, item))
+
+        # Sort by Final Score
+        ranked_candidates.sort(key=lambda x: x[0], reverse=True)
+
+        # Select with buffer for final IMDB filtering
+        buffer_selection = [item for score, item in ranked_candidates[: max_results * 2]]
+
+        # Fetch Full Metadata
+        meta_items = await self._fetch_metadata_for_items(buffer_selection, content_type)
+
+        # Final Strict Filter by IMDB ID
+        final_items = []
+        for item in meta_items:
+            if item["id"] in watched_imdb_ids:
+                continue
+            ext_ids = item.get("_external_ids", {})
+            if ext_ids.get("imdb_id") in watched_imdb_ids:
                 continue
 
-            # Simple dedupe based on TMDB ID first
-            seen_tmdb_ids.add(tmdb_id)
-
-            # We'll do the full scoring logic after fetching meta, but we can prep unique list now
-            filtered_tmdb_items.append(item)
-
-            # Optimization: If we have way too many, cut off early
-            if len(filtered_tmdb_items) >= max_results * 2:
+            item.pop("_external_ids", None)
+            final_items.append(item)
+            if len(final_items) >= max_results:
                 break
 
-        # Step 8: Fetch full metadata
-        final_recommendations = await self._fetch_metadata_for_items(filtered_tmdb_items, content_type)
-
-        for meta_data in final_recommendations:
-            imdb_id = meta_data.get("imdb_id") or meta_data.get("id")
-
-            # Skip if already watched or no IMDB ID
-            if not imdb_id or imdb_id in watched_imdb_ids:
-                continue
-
-            if imdb_id not in unique_recommendations:
-                # Base score from IMDB rating
-                try:
-                    score = float(meta_data.get("imdbRating", 0))
-                except (ValueError, TypeError):
-                    score = 0.0
-                meta_data["_score"] = score
-                unique_recommendations[imdb_id] = meta_data
-            else:
-                # Boost score if recommended by multiple source items
-                existing_recommendation = unique_recommendations[imdb_id]
-                try:
-                    additional_score = float(meta_data.get("imdbRating", 0))
-                except (ValueError, TypeError):
-                    additional_score = 0.0
-                existing_recommendation["_score"] = existing_recommendation.get("_score", 0) + additional_score
-
-            # Early exit if we have enough results
-            if len(unique_recommendations) >= max_results:
-                break
-
-        # Step 9: Sort by score (higher score = more relevant, appears from more sources)
-        sorted_recommendations = sorted(
-            unique_recommendations.values(),
-            key=lambda x: x.get("_score", 0),
-            reverse=True,
-        )
-
-        logger.info(f"Generated {len(sorted_recommendations)} unique recommendations")
-        return sorted_recommendations
+        return final_items
 
     async def get_recommendations_for_genre(self, genre_id: str, media_type: str) -> list[dict]:
         """
         Get recommendations for a specific genre.
         """
-        # parse genre ids first
-        # remove watchly.genre. prefix
-        genre_id = genre_id.replace("watchly.genre.", "")
+        watched_imdb, watched_tmdb = await self._get_exclusion_sets()
 
-        # genre_id params, replace - with , and _ with |
+        genre_id = genre_id.replace("watchly.genre.", "")
         genre_id_params = genre_id.replace("-", ",").replace("_", "|")
-        # now call discover api
-        # get recommendations from tmdb api
+
         recommendations = await self.tmdb_service.get_discover(
             media_type=media_type,
             with_genres=genre_id_params,
             sort_by="popularity.desc",
         )
-        recommendations = recommendations.get("results", [])
+        candidates = recommendations.get("results", [])
 
-        return await self._fetch_metadata_for_items(recommendations, media_type)
+        # Filter
+        candidates = await self._filter_candidates(candidates, watched_imdb, watched_tmdb)
+
+        # Meta + Final Filter
+        meta_items = await self._fetch_metadata_for_items(candidates[: self.per_item_limit * 2], media_type)
+
+        final_items = []
+        for item in meta_items:
+            if item["id"] in watched_imdb:
+                continue
+            if item.get("_external_ids", {}).get("imdb_id") in watched_imdb:
+                continue
+            item.pop("_external_ids", None)
+            final_items.append(item)
+
+        return final_items[: self.per_item_limit]
+
+    async def get_trending(self, content_type: str, limit: int = 20) -> list[dict]:
+        """
+        Get trending items for a specific content type.
+        """
+        watched_imdb, watched_tmdb = await self._get_exclusion_sets()
+
+        rec_response = await self.tmdb_service.get_discover(media_type=content_type, sort_by="popularity.desc", page=1)
+        results = rec_response.get("results", [])
+
+        # Filter quality + watched
+        quality_results = [r for r in results if r.get("vote_average", 0) >= 6.0]
+        filtered = await self._filter_candidates(quality_results, watched_imdb, watched_tmdb)
+
+        meta_items = await self._fetch_metadata_for_items(filtered[: limit * 2], content_type)
+
+        final_items = []
+        for item in meta_items:
+            if item["id"] in watched_imdb:
+                continue
+            if item.get("_external_ids", {}).get("imdb_id") in watched_imdb:
+                continue
+            item.pop("_external_ids", None)
+            final_items.append(item)
+
+        return final_items[:limit]
+
+    async def get_hidden_gems(self, content_type: str, limit: int = 20) -> list[dict]:
+        """
+        Get 'Hidden Gems': High rated items with lower popularity.
+        """
+        watched_imdb, watched_tmdb = await self._get_exclusion_sets()
+
+        rec_response = await self.tmdb_service._make_request(f"/{content_type}/top_rated", params={"page": 1})
+        results = rec_response.get("results", [])
+
+        # Filter
+        hidden_gems = [r for r in results if r.get("popularity", 1000) < 500]
+        filtered = await self._filter_candidates(hidden_gems, watched_imdb, watched_tmdb)
+
+        meta_items = await self._fetch_metadata_for_items(filtered[: limit * 2], content_type)
+
+        final_items = []
+        for item in meta_items:
+            if item["id"] in watched_imdb:
+                continue
+            if item.get("_external_ids", {}).get("imdb_id") in watched_imdb:
+                continue
+            item.pop("_external_ids", None)
+            final_items.append(item)
+
+        return final_items[:limit]

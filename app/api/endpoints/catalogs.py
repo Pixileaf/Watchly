@@ -44,7 +44,7 @@ async def get_catalog(
         raise HTTPException(status_code=400, detail="Invalid type. Use 'movie' or 'series'")
 
     if (
-        id not in ["watchly.rec"]
+        id not in ["watchly.rec", "watchly.trending", "watchly.gems"]
         and not id.startswith("tt")
         and not id.startswith("watchly.genre.")
         and not id.startswith("watchly.loved.")
@@ -54,8 +54,8 @@ async def get_catalog(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Invalid id. Use 'watchly.rec', 'watchly.loved.<item_id>', 'watchly.watched.<item_id>', or"
-                " 'watchly.genre.<genre_id>'"
+                "Invalid id. Use 'watchly.rec', 'watchly.trending', 'watchly.gems', "
+                "'watchly.loved.<item_id>', 'watchly.watched.<item_id>', or 'watchly.genre.<genre_id>'"
             ),
         )
     try:
@@ -79,11 +79,17 @@ async def get_catalog(
         if item_id:
             recommendations = await recommendation_service.get_recommendations_for_item(item_id=item_id)
             logger.info(f"Found {len(recommendations)} recommendations for {item_id}")
+        elif id == "watchly.trending":
+            recommendations = await recommendation_service.get_trending(content_type=type)
+            logger.info(f"Found {len(recommendations)} trending items for {type}")
+        elif id == "watchly.gems":
+            recommendations = await recommendation_service.get_hidden_gems(content_type=type)
+            logger.info(f"Found {len(recommendations)} hidden gems for {type}")
         elif id.startswith("watchly.genre."):
             recommendations = await recommendation_service.get_recommendations_for_genre(genre_id=id, media_type=type)
             logger.info(f"Found {len(recommendations)} recommendations for {id}")
         else:
-            # Get recommendations based on library
+            # Get recommendations based on library (Top Picks / watchly.rec)
             # Use settings or config to determine if we should include watched items
             user_settings = decode_settings(settings_str) if settings_str else None
             if user_settings:
@@ -95,7 +101,6 @@ async def get_catalog(
             recommendations = await recommendation_service.get_recommendations(
                 content_type=type,
                 source_items_limit=10,
-                recommendations_per_source=5,
                 max_results=50,
                 include_watched=include_watched,
             )

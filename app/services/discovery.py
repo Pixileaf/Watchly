@@ -1,0 +1,88 @@
+import asyncio
+
+from app.models.profile import UserTasteProfile
+from app.services.tmdb_service import TMDBService
+
+
+class DiscoveryEngine:
+    """
+    Service to discover content based on User Taste Profile.
+    Uses TMDB Discovery API with weighted query parameters derived from the user profile.
+    """
+
+    def __init__(self):
+        self.tmdb_service = TMDBService()
+
+    async def discover_recommendations(
+        self, profile: UserTasteProfile, content_type: str, limit: int = 20
+    ) -> list[dict]:
+        """
+        Find content that matches the user's taste profile.
+        Strategy:
+        1. Extract top weighted Genres, Keywords, Actors, Director.
+        2. Build specific 'Discovery Queries' for each category.
+        3. Fetch results in parallel.
+        4. Return the combined candidate set (B).
+        """
+        # 1. Extract Top Features
+        top_genres = profile.get_top_genres(limit=3)  # e.g. [(28, 1.0), (878, 0.8)]
+        top_keywords = profile.get_top_keywords(limit=3)  # e.g. [(123, 0.9)]
+        # Need to add get_top_cast to UserTasteProfile model first, assuming it exists or using profile.cast directly
+        # Based on previous step, profile.cast exists.
+        top_cast = profile.cast.get_top_features(limit=2)
+        top_crew = profile.get_top_crew(limit=1)  # e.g. [(555, 1.0)] - Director
+
+        if not top_genres and not top_keywords and not top_cast:
+            # Fallback if profile is empty
+            return []
+
+        tasks = []
+
+        # Query 1: Top Genres Mix
+        if top_genres:
+            genre_ids = "|".join([str(g[0]) for g in top_genres])
+            params_genres = {"with_genres": genre_ids, "sort_by": "popularity.desc", "vote_count.gte": 100}
+            tasks.append(self._fetch_discovery(content_type, params_genres))
+
+        # Query 2: Top Keywords
+        if top_keywords:
+            keyword_ids = "|".join([str(k[0]) for k in top_keywords])
+            params_keywords = {"with_keywords": keyword_ids, "sort_by": "popularity.desc"}
+            tasks.append(self._fetch_discovery(content_type, params_keywords))
+
+        # Query 3: Top Actors
+        for actor in top_cast:
+            actor_id = actor[0]
+            params_actor = {"with_cast": str(actor_id), "sort_by": "popularity.desc"}
+            tasks.append(self._fetch_discovery(content_type, params_actor))
+
+        # Query 4: Top Director
+        if top_crew:
+            director_id = top_crew[0][0]
+            params_director = {
+                "with_crew": str(director_id),
+                "sort_by": "vote_average.desc",  # Directors imply quality preference
+            }
+            tasks.append(self._fetch_discovery(content_type, params_director))
+
+        # 3. Execute Parallel Queries
+        results_batches = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 4. Aggregate and Deduplicate
+        all_candidates = {}
+        for batch in results_batches:
+            if isinstance(batch, Exception) or not batch:
+                continue
+            for item in batch:
+                if item["id"] not in all_candidates:
+                    all_candidates[item["id"]] = item
+
+        return list(all_candidates.values())
+
+    async def _fetch_discovery(self, media_type: str, params: dict) -> list[dict]:
+        """Helper to call TMDB discovery."""
+        try:
+            data = await self.tmdb_service.get_discover(media_type, **params)
+            return data.get("results", [])
+        except Exception:
+            return []
