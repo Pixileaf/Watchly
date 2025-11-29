@@ -37,12 +37,20 @@ async def get_catalog(
         logger.warning(f"Invalid type: {type}")
         raise HTTPException(status_code=400, detail="Invalid type. Use 'movie' or 'series'")
 
-    # Supported IDs now include dynamic themes
-    if id != "watchly.rec" and not id.startswith("tt") and not id.startswith("watchly.theme."):
+    # Supported IDs now include dynamic themes and item-based rows
+    if (
+        id != "watchly.rec"
+        and not id.startswith("tt")
+        and not id.startswith("watchly.theme.")
+        and not id.startswith("watchly.item.")
+    ):
         logger.warning(f"Invalid id: {id}")
         raise HTTPException(
             status_code=400,
-            detail="Invalid id. Supported: 'watchly.rec', 'watchly.theme.<params>', or specific item IDs.",
+            detail=(  #
+                "Invalid id. Supported: 'watchly.rec', 'watchly.theme.<params>', 'watchly.item.<id>', or"
+                " specific item IDs."
+            ),
         )
     try:
         # Create services with credentials
@@ -57,6 +65,12 @@ async def get_catalog(
         if id.startswith("tt"):
             recommendations = await recommendation_service.get_recommendations_for_item(item_id=id)
             logger.info(f"Found {len(recommendations)} recommendations for {id}")
+
+        elif id.startswith("watchly.item."):
+            # Extract actual item ID (tt... or tmdb:...)
+            item_id = id.replace("watchly.item.", "")
+            recommendations = await recommendation_service.get_recommendations_for_item(item_id=item_id)
+            logger.info(f"Found {len(recommendations)} recommendations for item {item_id}")
 
         elif id.startswith("watchly.theme."):
             recommendations = await recommendation_service.get_recommendations_for_theme(

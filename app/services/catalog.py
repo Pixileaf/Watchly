@@ -25,7 +25,10 @@ class DynamicCatalogService:
     def build_catalog_entry(self, item, label, config_id):
         item_id = item.get("_id", "")
         # Use watchly.{config_id}.{item_id} format for better organization
-        if item_id.startswith("tt") and config_id in ["watchly.loved", "watchly.watched"]:
+        if config_id == "watchly.item":
+            # New Item-based catalog format
+            catalog_id = f"{config_id}.{item_id}"
+        elif item_id.startswith("tt") and config_id in ["watchly.loved", "watchly.watched"]:
             catalog_id = f"{config_id}.{item_id}"
         else:
             catalog_id = item_id
@@ -83,7 +86,67 @@ class DynamicCatalogService:
         for row in series_rows:
             catalogs.append({"type": "series", "id": row.id, "name": row.title, "extra": []})
 
+        # 3. Add Item-Based Rows (New)
+        # For Movies
+        self._add_item_based_rows(catalogs, library_items, "movie")
+        # For Series
+        self._add_item_based_rows(catalogs, library_items, "series")
+
         return catalogs
+
+    def _add_item_based_rows(self, catalogs: list, library_items: dict, content_type: str):
+        """Helper to add 'Because you watched' and 'More like' rows."""
+
+        # Helper to parse date
+        def get_date(item):
+            import datetime
+
+            val = item.get("state", {}).get("lastWatched")
+            if val:
+                try:
+                    if isinstance(val, str):
+                        return datetime.datetime.fromisoformat(val.replace("Z", "+00:00"))
+                    return val
+                except (ValueError, TypeError):
+                    pass
+            # Fallback to mtime
+            val = item.get("_mtime")
+            if val:
+                try:
+                    return datetime.datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    pass
+            return datetime.datetime.min.replace(tzinfo=datetime.UTC)
+
+        # 1. More Like <Loved Item>
+        loved = [i for i in library_items.get("loved", []) if i.get("type") == content_type]
+        loved.sort(key=get_date, reverse=True)
+
+        last_loved = loved[0] if loved else None
+        if last_loved:
+            catalogs.append(self.build_catalog_entry(last_loved, "More like", "watchly.item"))
+
+        # 2. Because you watched <Watched Item>
+        # Filter only watched items (exclude loved if possible or treat as separate pool)
+        # Actually, watched_items in StremioService include everything with progress or watched flag
+        # We want 'Because you watched' to reflect recent activity.
+
+        watched = [i for i in library_items.get("watched", []) if i.get("type") == content_type]
+        watched.sort(key=get_date, reverse=True)
+
+        last_watched = None
+        for item in watched:
+            # Avoid duplicate row if it's the same item as 'More like'
+            if last_loved and item.get("_id") == last_loved.get("_id"):
+                continue
+            last_watched = item
+            break
+
+        # If no distinct last watched found (e.g. only watched 1 item and it was loved),
+        # we can skip or pick the next best.
+
+        if last_watched:
+            catalogs.append(self.build_catalog_entry(last_watched, "Because you watched", "watchly.item"))
 
     async def get_watched_loved_catalogs(self, library_items: list[dict], user_settings: UserSettings | None = None):
         """Legacy compatibility wrapper - redirects to get_dynamic_catalogs"""
