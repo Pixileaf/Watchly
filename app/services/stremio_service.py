@@ -170,8 +170,8 @@ class StremioService:
             ]
             logger.info(f"Filtered {len(watched_items)} watched library items")
 
-            # Sort watched items by modification time (most recent first)
-            watched_items.sort(key=lambda x: x.get("_mtime", ""), reverse=True)
+            # Sort watched items by watched time (most recent first)
+            watched_items.sort(key=lambda x: x.get("state", {}).get("lastWatched", ""), reverse=True)
 
             #  is_loved only until we find 10 movies and 10 series
             loved_items = []
@@ -225,7 +225,7 @@ class StremioService:
                     {
                         "type": item.get("type"),
                         "_id": item.get("_id"),
-                        "_mtime": item.get("_mtime", ""),
+                        "_mtime": item.get("state", {}).get("lastWatched", ""),
                         "name": item.get("name"),
                     }
                 )
@@ -237,7 +237,7 @@ class StremioService:
                     {
                         "type": item.get("type"),
                         "_id": item.get("_id"),
-                        "_mtime": item.get("_mtime", ""),
+                        "_mtime": item.get("state", {}).get("lastWatched", ""),
                         "name": item.get("name"),
                     }
                 )
