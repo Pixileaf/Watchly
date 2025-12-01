@@ -16,7 +16,7 @@ from app.core.config import settings
 class TokenStore:
     """Redis-backed store for user credentials and auth tokens."""
 
-    KEY_PREFIX = "watchly:token:"
+    KEY_PREFIX = settings.REDIS_TOKEN_KEY
 
     def __init__(self) -> None:
         self._client: redis.Redis | None = None
