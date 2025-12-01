@@ -4,8 +4,12 @@ from pydantic import BaseModel
 
 from app.models.profile import UserTasteProfile
 from app.services.tmdb.countries import COUNTRY_ADJECTIVES
-from app.services.tmdb.genre import GENRE_ADJECTIVES, movie_genres, series_genres
+from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb_service import TMDBService
+
+
+def normalize_keyword(kw):
+    return kw.strip().replace("-", " ").replace("_", " ").title()
 
 
 class RowDefinition(BaseModel):
@@ -42,7 +46,7 @@ class RowGeneratorService:
 
         # Extract features
         top_genres = profile.get_top_genres(limit=3)  # [(id, score), ...]
-        top_keywords = profile.get_top_keywords(limit=3)  # [(id, score), ...]
+        top_keywords = profile.get_top_keywords(limit=4)  # [(id, score), ...]
         top_countries = profile.get_top_countries(limit=1)  # [(code, score)]
         top_years = profile.years.get_top_features(limit=1)  # [(decade_start, score)]
 
@@ -58,41 +62,53 @@ class RowGeneratorService:
                 return random.choice(adjectives)
             return ""
 
-        # Strategy 1: Genre + Mood (Adjective)
-        if top_genres:
-            g_id = top_genres[0][0]
-            adj = random.choice(GENRE_ADJECTIVES.get(g_id, ["Essential"]))
-            rows.append(
-                RowDefinition(
-                    title=f"{adj} {get_gname(g_id)}",
-                    id=f"watchly.theme.g{g_id}.sort-vote",  # Use sort-vote for quality
-                    genres=[g_id],
-                )
-            )
-
-        # Strategy 2: Genre + Keyword ("Time-Travel Adventures")
-        if len(top_genres) > 0 and top_keywords:
-            g_id = top_genres[0][0]  # Use top genre
+        # Strategy 1: Pure Keyword Row (Top Priority)
+        if top_keywords:
             k_id = top_keywords[0][0]
-
             kw_name = await self._get_keyword_name(k_id)
             if kw_name:
                 rows.append(
                     RowDefinition(
-                        title=f"{kw_name.title()} {get_gname(g_id)}",
-                        id=f"watchly.theme.g{g_id}.k{k_id}",
-                        genres=[g_id],
+                        title=f"{normalize_keyword(kw_name)}",
+                        id=f"watchly.theme.k{k_id}",
                         keywords=[k_id],
                     )
                 )
 
-        # Strategy 3: Genre + Country ("Korean Thrillers")
-        if len(top_genres) > 0 and top_countries:
-            # Pick a genre (maybe 2nd top to vary)
+        # Strategy 2: Keyword + Genre (Specific Niche)
+        if top_genres and len(top_keywords) > 1:
+            g_id = top_genres[0][0]
+            # get random keywords: Just to surprise user in every refresh
+            k_id = random.choice(top_keywords[1:])[0]
+
+            if k_id:
+                kw_name = await self._get_keyword_name(k_id)
+                if kw_name:
+                    title = f"{normalize_keyword(kw_name)} {get_gname(g_id)}"
+                    # keyword and genre can have same name sometimes, remove if so
+                    words = title.split()
+                    seen_words = set()
+                    unique_words = []
+                    for word in words:
+                        if word not in seen_words:
+                            unique_words.append(word)
+                            seen_words.add(word)
+                    title = " ".join(unique_words)
+
+                    rows.append(
+                        RowDefinition(
+                            title=title,
+                            id=f"watchly.theme.g{g_id}.k{k_id}",
+                            genres=[g_id],
+                            keywords=[k_id],
+                        )
+                    )
+
+        # Strategy 3: Genre + Country (e.g. "Bollywood Action")
+        if top_countries and len(top_genres) > 0:
             g_id = top_genres[0][0] if len(top_genres) == 1 else top_genres[1][0]
             c_code = top_countries[0][0]
             c_adj = get_cname(c_code)
-
             if c_adj:
                 rows.append(
                     RowDefinition(
@@ -111,7 +127,7 @@ class RowGeneratorService:
                 g_id = top_genres[2][0]
 
             decade_start = top_years[0][0]
-            # Only do this if decade is valid and somewhat old (nostalgia factor)
+            # # Only do this if decade is valid and somewhat old (nostalgia factor)
             if 1970 <= decade_start <= 2010:
                 decade_str = str(decade_start)[2:] + "s"  # "90s"
                 rows.append(

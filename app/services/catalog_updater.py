@@ -38,6 +38,9 @@ async def refresh_catalogs_for_credentials(
         logger.info(f"[{redacted}] Prepared {len(catalogs)} catalogs")
         auth_key = await stremio_service.get_auth_key()
         return await stremio_service.update_catalogs(catalogs, auth_key)
+    except Exception as e:
+        logger.exception(f"Failed to update catalogs: {e}", exc_info=True)
+        raise e
     finally:
         await stremio_service.close()
 

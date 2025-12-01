@@ -34,9 +34,9 @@ class DynamicCatalogService:
             catalog_id = item_id
 
         name = item.get("name")
-        # Truncate long names for cleaner UI
-        if len(name) > 25:
-            name = name[:25] + "..."
+        # # Truncate long names for cleaner UI
+        # if len(name) > 25:
+        #     name = name[:25] + "..."
 
         return {
             "type": self.normalize_type(item.get("type")),
@@ -88,7 +88,6 @@ class DynamicCatalogService:
         """
         Generate all dynamic catalog rows.
         """
-        print(user_settings)
 
         include_item_based_rows = bool(
             next((c for c in user_settings.catalogs if c.id == "watchly.item" and c.enabled), True)
