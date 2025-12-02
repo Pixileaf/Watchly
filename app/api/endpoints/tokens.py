@@ -161,7 +161,7 @@ async def create_token(payload: TokenRequest, request: Request) -> TokenResponse
     )
 
 
-@router.post("/delete", status_code=200)
+@router.delete("/", status_code=200)
 async def delete_token(payload: TokenRequest):
     """Delete a token based on provided credentials."""
     username = payload.username.strip() if payload.username else None

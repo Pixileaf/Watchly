@@ -5,7 +5,7 @@ const defaultCatalogs = [
     { id: 'watchly.theme', name: 'Keyword Genre Based Dynamic Recommendations', enabled: true, description: 'Recommendations based on your favorite genres and themes' },
 ];
 
-let catalogs = [...defaultCatalogs];
+let catalogs = JSON.parse(JSON.stringify(defaultCatalogs));
 
 // DOM Elements
 const configForm = document.getElementById('configForm');
@@ -425,7 +425,7 @@ function initializeFormSubmission() {
         // Prepare catalog configs
         const catalogConfigs = catalogs.map(cat => ({
             id: cat.id,
-            name: cat.name !== getDefaultCatalogName(cat.id) ? cat.name : null,
+            name: cat.name,
             enabled: cat.enabled
         }));
 
@@ -471,10 +471,6 @@ function initializeFormSubmission() {
     });
 }
 
-function getDefaultCatalogName(id) {
-    const defaultCat = defaultCatalogs.find(c => c.id === id);
-    return defaultCat ? defaultCat.name : '';
-}
 
 // Success Actions
 function initializeSuccessActions() {
@@ -519,7 +515,7 @@ function initializeSuccessActions() {
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
             configForm.reset();
-            catalogs = [...defaultCatalogs];
+            catalogs = JSON.parse(JSON.stringify(defaultCatalogs));
             renderCatalogList();
             configForm.classList.remove('hidden');
             configForm.style.display = ''; // Clear inline style if any
@@ -570,8 +566,8 @@ function initializeSuccessActions() {
             hideError();
 
             try {
-                const response = await fetch('/tokens/delete', {
-                    method: 'POST',
+                const response = await fetch('/tokens/', {
+                    method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -590,7 +586,7 @@ function initializeSuccessActions() {
                 if (stremioLoginBtn.getAttribute('data-action') === 'logout') {
                     setStremioLoggedOutState();
                 }
-                catalogs = [...defaultCatalogs];
+                catalogs = JSON.parse(JSON.stringify(defaultCatalogs));
                 renderCatalogList();
 
             } catch (err) {
