@@ -16,13 +16,25 @@ from app.utils import redact_token
 MAX_CONCURRENT_UPDATES = 5
 
 
-async def refresh_catalogs_for_credentials(credentials: dict[str, Any], auth_key: str | None = None) -> bool:
+async def refresh_catalogs_for_credentials(
+    credentials: dict[str, Any], auth_key: str | None = None, key: str | None = None
+) -> bool:
     """Regenerate catalogs for the provided credentials and push them to Stremio."""
     stremio_service = StremioService(
         username=credentials.get("username") or "",
         password=credentials.get("password") or "",
         auth_key=auth_key or credentials.get("authKey"),
     )
+    # check if user has addon installed or not
+    try:
+        addon_installed = await stremio_service.is_addon_installed()
+        if not addon_installed:
+            logger.info("User has not installed addon. Removing token from redis")
+            await token_store.delete_token(key=key)
+            return True
+    except Exception as e:
+        logger.exception(f"Failed to check if addon is installed: {e}")
+
     try:
         library_items = await stremio_service.get_library_items()
         dynamic_catalog_service = DynamicCatalogService(stremio_service=stremio_service)
@@ -104,7 +116,7 @@ class BackgroundCatalogUpdater:
 
             async with sem:
                 try:
-                    updated = await refresh_catalogs_for_credentials(payload)
+                    updated = await refresh_catalogs_for_credentials(payload, key=key)
                     logger.info(
                         f"Background refresh for {self._mask_key(key)} completed (updated={updated})",
                     )

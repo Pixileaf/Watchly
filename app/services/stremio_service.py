@@ -302,3 +302,11 @@ class StremioService:
                 addon["manifest"]["catalogs"] = catalogs
                 break
         return await self.update_addon(addons, auth_key)
+
+    async def is_addon_installed(self, auth_key: str | None = None):
+        auth_key = auth_key or await self.get_auth_key()
+        addons = await self.get_addons(auth_key)
+        for addon in addons:
+            if addon.get("manifest", {}).get("id") == settings.ADDON_ID:
+                return True
+        return False
