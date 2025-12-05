@@ -12,6 +12,15 @@ from app.services.tmdb_service import TMDBService
 from app.services.user_profile import UserProfileService
 
 
+def normalize(value, min_v=0, max_v=10):
+    """
+    Normalize popularity / rating when blending.
+    """
+    if max_v == min_v:
+        return 0
+    return (value - min_v) / (max_v - min_v)
+
+
 def _parse_identifier(identifier: str) -> tuple[str | None, int | None]:
     """Parse Stremio identifier to extract IMDB ID and TMDB ID."""
     if not identifier:
@@ -350,7 +359,7 @@ class RecommendationService:
         recommended_items = recommendation_response.get("results", [])
         if not recommended_items:
             return []
-        return recommended_items[:limit]
+        return recommended_items
 
     async def get_recommendations(
         self,
@@ -396,17 +405,18 @@ class RecommendationService:
         tasks_a = []
         for source in top_source_items:
             tasks_a.append(self._fetch_recommendations_from_tmdb(source.get("_id"), source.get("type"), limit=10))
+        similarity_candidates = []
+        similarity_recommendations = await asyncio.gather(*tasks_a, return_exceptions=True)
+        similarity_recommendations = [item for item in similarity_recommendations if not isinstance(item, Exception)]
+        for item in similarity_recommendations:
+            similarity_candidates.extend(item)
 
         # --- Candidate Set B: Profile-based Discovery ---
         # Use typed profile based on content_type
         user_profile = await self.user_profile_service.build_user_profile(scored_objects, content_type=content_type)
-        task_b = self.discovery_engine.discover_recommendations(user_profile, content_type, limit=20)
-
-        # Execute all fetches
-        all_results = await asyncio.gather(task_b, *tasks_a, return_exceptions=True)
-
-        discovery_candidates = all_results[0] if isinstance(all_results[0], list) else []
-        similarity_batches = all_results[1:]
+        discovery_candidates = await self.discovery_engine.discover_recommendations(
+            user_profile, content_type, limit=20
+        )
 
         # --- Combine & Deduplicate ---
         candidate_pool = {}  # tmdb_id -> item_dict
@@ -414,10 +424,10 @@ class RecommendationService:
         for item in discovery_candidates:
             candidate_pool[item["id"]] = item
 
-        for batch in similarity_batches:
-            if isinstance(batch, list):
-                for item in batch:
-                    candidate_pool[item["id"]] = item
+        for item in similarity_candidates:
+            # add score to boost similarity candidates
+            item["_ranked_candidate"] = True
+            candidate_pool[item["id"]] = item
 
         # --- Re-Ranking & Filtering ---
         ranked_candidates = []
@@ -430,11 +440,15 @@ class RecommendationService:
             sim_score = self.user_profile_service.calculate_similarity(user_profile, item)
             vote_average = item.get("vote_average", 0)
             popularity = item.get("popularity", 0)
-            import math
 
-            pop_score = math.log(popularity + 1) if popularity > 0 else 0
+            pop_score = normalize(popularity, 0, 1000)
+            vote_score = normalize(vote_average, 0, 10)
 
-            final_score = (sim_score * 0.7) + (vote_average * 0.2) + (pop_score * 0.1)
+            final_score = (sim_score * 0.6) + (vote_score * 0.3) + (pop_score * 0.1)
+
+            # Boost candidate if its from tmdb collaborative recommendations
+            if item.get("_ranked_candidate"):
+                final_score *= 1.25
             ranked_candidates.append((final_score, item))
 
         # Sort by Final Score

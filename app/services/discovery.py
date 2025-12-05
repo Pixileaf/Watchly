@@ -32,6 +32,8 @@ class DiscoveryEngine:
         top_cast = profile.cast.get_top_features(limit=2)
         top_crew = profile.get_top_crew(limit=1)  # e.g. [(555, 1.0)] - Director
 
+        top_countries = profile.get_top_countries(limit=2)
+
         if not top_genres and not top_keywords and not top_cast:
             # Fallback if profile is empty
             return []
@@ -41,8 +43,18 @@ class DiscoveryEngine:
         # Query 1: Top Genres Mix
         if top_genres:
             genre_ids = "|".join([str(g[0]) for g in top_genres])
-            params_genres = {"with_genres": genre_ids, "sort_by": "popularity.desc", "vote_count.gte": 100}
-            tasks.append(self._fetch_discovery(content_type, params_genres))
+            params_popular = {"with_genres": genre_ids, "sort_by": "popularity.desc", "vote_count.gte": 100}
+            tasks.append(self._fetch_discovery(content_type, params_popular))
+
+            # fetch atleast two pages of results
+            for i in range(2):
+                params_rating = {
+                    "with_genres": genre_ids,
+                    "sort_by": "ratings.desc",
+                    "vote_count.gte": 300,
+                    "page": i + 1,
+                }
+                tasks.append(self._fetch_discovery(content_type, params_rating))
 
         # Query 2: Top Keywords
         if top_keywords:
@@ -50,11 +62,24 @@ class DiscoveryEngine:
             params_keywords = {"with_keywords": keyword_ids, "sort_by": "popularity.desc"}
             tasks.append(self._fetch_discovery(content_type, params_keywords))
 
+            # fetch atleast two pages of results
+            for i in range(3):
+                params_rating = {
+                    "with_keywords": keyword_ids,
+                    "sort_by": "ratings.desc",
+                    "vote_count.gte": 300,
+                    "page": i + 1,
+                }
+                tasks.append(self._fetch_discovery(content_type, params_rating))
+
         # Query 3: Top Actors
         for actor in top_cast:
             actor_id = actor[0]
             params_actor = {"with_cast": str(actor_id), "sort_by": "popularity.desc"}
             tasks.append(self._fetch_discovery(content_type, params_actor))
+
+            params_rating = {"with_cast": str(actor_id), "sort_by": "ratings.desc", "vote_count.gte": 300}
+            tasks.append(self._fetch_discovery(content_type, params_rating))
 
         # Query 4: Top Director
         if top_crew:
@@ -64,6 +89,18 @@ class DiscoveryEngine:
                 "sort_by": "vote_average.desc",  # Directors imply quality preference
             }
             tasks.append(self._fetch_discovery(content_type, params_director))
+
+            params_rating = {"with_crew": str(director_id), "sort_by": "ratings.desc", "vote_count.gte": 300}
+            tasks.append(self._fetch_discovery(content_type, params_rating))
+
+        # Query 5: Top Countries
+        if top_countries:
+            country_ids = "|".join([str(c[0]) for c in top_countries])
+            params_country = {"with_origin_country": country_ids, "sort_by": "popularity.desc", "vote_count.gte": 100}
+            tasks.append(self._fetch_discovery(content_type, params_country))
+
+            params_rating = {"with_origin_country": country_ids, "sort_by": "ratings.desc", "vote_count.gte": 300}
+            tasks.append(self._fetch_discovery(content_type, params_rating))
 
         # 3. Execute Parallel Queries
         results_batches = await asyncio.gather(*tasks, return_exceptions=True)

@@ -5,12 +5,24 @@ from app.models.scoring import ScoredItem
 from app.services.tmdb_service import TMDBService
 
 # TODO: Make these weights dynamic based on user's preferences.
-GENRES_WEIGHT = 1.0
-KEYWORDS_WEIGHT = 2.0
-CAST_WEIGHT = 1.2
-CREW_WEIGHT = 1.2
-YEAR_WEIGHT = 0.5
-COUNTRIES_WEIGHT = 0.5
+GENRES_WEIGHT = 0.3
+KEYWORDS_WEIGHT = 0.40
+CAST_WEIGHT = 0.1
+CREW_WEIGHT = 0.1
+YEAR_WEIGHT = 0.05
+COUNTRIES_WEIGHT = 0.05
+BASE_GENRE_WEIGHT = 0.15
+
+
+def emphasis(x: float) -> float:
+    """
+    Non-linear boost for strong preferences.
+    """
+    return x**1.25
+
+
+def safe_div(a, b):
+    return a / b if b else 0.0
 
 
 class UserProfileService:
@@ -83,41 +95,65 @@ class UserProfileService:
 
     def calculate_similarity(self, profile: UserTasteProfile, item_meta: dict) -> float:
         """
-        Calculate the match score between a candidate item and the user profile.
-        Uses a weighted dot product strategy.
+        Final improved similarity scoring function.
+        Uses normalized sparse matching + rarity boosting + non-linear emphasis.
         """
-        # 1. Vectorize the candidate item
-        item_vector = self._vectorize_item(item_meta)
+
+        item_vec = self._vectorize_item(item_meta)
 
         score = 0.0
 
-        # 2. Calculate Dot Product for each dimension
-        # We can tune the weights of dimensions here too if needed
+        print(profile)
 
-        # Genres match
-        for g_id in item_vector["genres"]:
-            score += profile.genres.values.get(g_id, 0.0) * GENRES_WEIGHT
+        # 1. GENRES
+        # Normalize so movies with many genres don't get excessive score.
+        for gid in item_vec["genres"]:
+            pref = profile.genres.values.get(gid, 0.0)
 
-        # Keywords match (Higher weight usually)
-        for k_id in item_vector["keywords"]:
-            score += profile.keywords.values.get(k_id, 0.0) * KEYWORDS_WEIGHT
+            if pref > 0:
+                s = emphasis(pref)
+                s = safe_div(s, len(item_vec["genres"]))
+                score += s * GENRES_WEIGHT
 
-        # Cast match
-        for c_id in item_vector["cast"]:
-            score += profile.cast.values.get(c_id, 0.0) * CAST_WEIGHT
+            # Soft prior bias (genre-only)
+            base_pref = profile.top_genres_normalized.get(gid, 0.0)
+            score += base_pref * BASE_GENRE_WEIGHT
 
-        # Crew/Director match
-        for cr_id in item_vector["crew"]:
-            score += profile.crew.values.get(cr_id, 0.0) * CREW_WEIGHT
+        # 2. KEYWORDS
+        for kw in item_vec["keywords"]:
+            pref = profile.keywords.values.get(kw, 0.0)
 
-        # Year match (Bucket)
-        year = item_vector["year"]
-        if year:
-            score += profile.years.values.get(year, 0.0) * YEAR_WEIGHT
+            if pref > 0:
+                s = emphasis(pref)
+                s = safe_div(s, len(item_vec["keywords"]))
+                score += s * KEYWORDS_WEIGHT
 
-        # Country match
-        for c_code in item_vector["countries"]:
-            score += profile.countries.values.get(c_code, 0.0) * COUNTRIES_WEIGHT
+        # 3. CAST
+        for cid in item_vec["cast"]:
+            pref = profile.cast.values.get(cid, 0.0)
+
+            if pref > 0:
+                s = emphasis(pref)
+                s = safe_div(s, len(item_vec["cast"]))
+                score += s * CAST_WEIGHT
+
+        # 4. CREW
+        for cr in item_vec["crew"]:
+            pref = profile.crew.values.get(cr, 0.0)
+
+            if pref > 0:
+                s = emphasis(pref)
+                s = safe_div(s, len(item_vec["crew"]))
+                score += s * CREW_WEIGHT
+
+        # 5. COUNTRIES
+        for c in item_vec["countries"]:
+            pref = profile.countries.values.get(c, 0.0)
+
+            if pref > 0:
+                s = emphasis(pref)
+                s = safe_div(s, len(item_vec["countries"]))
+                score += s * COUNTRIES_WEIGHT
 
         return score
 
