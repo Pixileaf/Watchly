@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     ADDON_ID: str = "com.bimal.watchly"
     ADDON_NAME: str = "Watchly"
     REDIS_URL: str = "redis://redis:6379/0"
-    TOKEN_SALT: str = "change-me"
     REDIS_TOKEN_KEY: str = "watchly:token:"
+    TOKEN_SALT: str = "change-me"
     TOKEN_TTL_SECONDS: int = 0  # 0 = never expire
     ANNOUNCEMENT_HTML: str = ""
     AUTO_UPDATE_CATALOGS: bool = True
