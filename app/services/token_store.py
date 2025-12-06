@@ -21,7 +21,6 @@ class TokenStore:
 
     def __init__(self) -> None:
         self._client: redis.Redis | None = None
-        self._cipher: Fernet | None = None
         # Cache decrypted payloads for 1 day (86400s) to reduce Redis hits
         # Max size 5000 allows many active users without eviction
         self._payload_cache: TTLCache = TTLCache(maxsize=5000, ttl=86400)
@@ -42,25 +41,24 @@ class TokenStore:
             )
 
     def _get_cipher(self) -> Fernet:
-        """Get or create Fernet cipher instance based on TOKEN_SALT."""
         salt = b"x7FDf9kypzQ1LmR32b8hWv49sKq2Pd8T"
-        if self._cipher is None:
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=salt,
-                iterations=200_000,
-            )
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=200_000,
+        )
 
-            key = base64.urlsafe_b64encode(kdf.derive(settings.TOKEN_SALT.encode("utf-8")))
-            self._cipher = Fernet(key)
-        return self._cipher
+        key = base64.urlsafe_b64encode(kdf.derive(settings.TOKEN_SALT.encode("utf-8")))
+        return Fernet(key)
 
     def encrypt_token(self, token: str) -> str:
-        return self._cipher.encrypt(token.encode("utf-8")).decode("utf-8")
+        cipher = self._get_cipher()
+        return cipher.encrypt(token.encode("utf-8")).decode("utf-8")
 
     def decrypt_token(self, enc: str) -> str:
-        return self._cipher.decrypt(enc.encode("utf-8")).decode("utf-8")
+        cipher = self._get_cipher()
+        return cipher.decrypt(enc.encode("utf-8")).decode("utf-8")
 
     async def _get_client(self) -> redis.Redis:
         if self._client is None:
