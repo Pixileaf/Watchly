@@ -1,4 +1,5 @@
 import asyncio
+from urllib.parse import urlparse
 
 import httpx
 from async_lru import alru_cache
@@ -10,6 +11,14 @@ BASE_CATALOGS = [
     {"type": "movie", "id": "watchly.rec", "name": "Top Picks for You", "extra": []},
     {"type": "series", "id": "watchly.rec", "name": "Top Picks for You", "extra": []},
 ]
+
+
+def match_hostname(url: str, hostname: str) -> bool:
+    """
+    Checks if the hostname extracted from a URL matches a given hostname string.
+    """
+    parsed_url = urlparse(url)
+    return parsed_url.hostname == hostname
 
 
 class StremioService:
@@ -340,7 +349,9 @@ class StremioService:
         logger.info(f"Found {len(addons)} addons")
         # find addon with id "com.watchly"
         for addon in addons:
-            if addon.get("manifest", {}).get("id") == settings.ADDON_ID:
+            if addon.get("manifest", {}).get("id") == settings.ADDON_ID and match_hostname(
+                addon.get("transportUrl"), settings.HOST_NAME
+            ):
                 logger.info(f"Found addon with id {settings.ADDON_ID}")
                 addon["manifest"]["catalogs"] = catalogs
                 break
@@ -350,6 +361,8 @@ class StremioService:
         auth_key = auth_key or await self.get_auth_key()
         addons = await self.get_addons(auth_key)
         for addon in addons:
-            if addon.get("manifest", {}).get("id") == settings.ADDON_ID:
+            if addon.get("manifest", {}).get("id") == settings.ADDON_ID and match_hostname(
+                addon.get("transportUrl"), settings.HOST_NAME
+            ):
                 return True
         return False

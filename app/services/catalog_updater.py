@@ -29,11 +29,11 @@ async def refresh_catalogs_for_credentials(token: str, credentials: dict[str, An
     try:
         addon_installed = await stremio_service.is_addon_installed(auth_key)
         if not addon_installed:
-            logger.info("User has not installed addon. Removing token from redis")
+            logger.info(f"[{redact_token(token)}] User has not installed addon. Removing token from redis")
             await token_store.delete_token(key=token)
             return True
     except Exception as e:
-        logger.exception(f"Failed to check if addon is installed: {e}")
+        logger.exception(f"[{redact_token(token)}] Failed to check if addon is installed: {e}")
 
     try:
         library_items = await stremio_service.get_library_items()
@@ -45,7 +45,7 @@ async def refresh_catalogs_for_credentials(token: str, credentials: dict[str, An
                 user_settings = UserSettings(**credentials["settings"])
             except Exception as e:
                 user_settings = get_default_settings()
-                logger.warning(f"Failed to parse user settings from credentials: {e}")
+                logger.warning(f"[{redact_token(token)}] Failed to parse user settings from credentials: {e}")
 
         catalogs = await dynamic_catalog_service.get_dynamic_catalogs(
             library_items=library_items, user_settings=user_settings
@@ -53,7 +53,7 @@ async def refresh_catalogs_for_credentials(token: str, credentials: dict[str, An
         logger.info(f"[{redact_token(token)}] Prepared {len(catalogs)} catalogs")
         return await stremio_service.update_catalogs(catalogs, auth_key)
     except Exception as e:
-        logger.exception(f"Failed to update catalogs: {e}", exc_info=True)
+        logger.exception(f"[{redact_token(token)}] Failed to update catalogs: {e}", exc_info=True)
         raise e
     finally:
         await stremio_service.close()
