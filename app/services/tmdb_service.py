@@ -1,16 +1,21 @@
+import asyncio
+import random
+
 import httpx
 from async_lru import alru_cache
 from loguru import logger
 
 from app.core.config import settings
+from app.core.version import __version__
 
 
 class TMDBService:
     """Service for interacting with The Movie Database (TMDB) API."""
 
-    def __init__(self):
+    def __init__(self, language: str = "en-US"):
         self.api_key = settings.TMDB_API_KEY
         self.base_url = "https://api.themoviedb.org/3"
+        self.language = language
         # Reuse HTTP client for connection pooling and better performance
         self._client: httpx.AsyncClient | None = None
         if not self.api_key:
@@ -22,6 +27,11 @@ class TMDBService:
             self._client = httpx.AsyncClient(
                 timeout=10.0,
                 limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                http2=True,
+                headers={
+                    "User-Agent": f"Watchly/{__version__} (+https://github.com/TimilsinaBimal/Watchly)",
+                    "Accept": "application/json",
+                },
             )
         return self._client
 
@@ -36,32 +46,54 @@ class TMDBService:
         if not self.api_key:
             raise RuntimeError("TMDB_API_KEY is not configured. Set the environment variable to enable TMDB requests.")
         url = f"{self.base_url}{endpoint}"
-        default_params = {"api_key": self.api_key, "language": "en-US"}
+        default_params = {"api_key": self.api_key, "language": self.language}
 
         if params:
             default_params.update(params)
 
-        try:
-            client = await self._get_client()
-            response = await client.get(url, params=default_params)
-            response.raise_for_status()
-
-            # Check if response has content
-            if not response.text:
-                logger.warning(f"TMDB API returned empty response for {endpoint}")
-                return {}
-
+        attempts = 0
+        last_exc: Exception | None = None
+        while attempts < 3:
             try:
-                return response.json()
-            except ValueError as e:
-                logger.error(f"TMDB API returned invalid JSON for {endpoint}: {e}. Response: {response.text[:200]}")
-                return {}
-        except httpx.HTTPStatusError as e:
-            logger.error(f"TMDB API error for {endpoint}: {e.response.status_code} - {e.response.text[:200]}")
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"TMDB API request error for {endpoint}: {e}")
-            raise
+                client = await self._get_client()
+                response = await client.get(url, params=default_params)
+                response.raise_for_status()
+
+                if not response.text:
+                    logger.warning(f"TMDB API returned empty response for {endpoint}")
+                    return {}
+
+                try:
+                    return response.json()
+                except ValueError as e:
+                    logger.error(
+                        f"TMDB API returned invalid JSON for {endpoint}: {e}. Response: {response.text[:200]}"
+                    )
+                    return {}
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                # Retry on 429 or 5xx
+                if status == 429 or 500 <= status < 600:
+                    attempts += 1
+                    backoff = (2 ** (attempts - 1)) + random.uniform(0, 0.25)
+                    logger.warning(f"TMDB {endpoint} failed with {status}; retry {attempts}/3 in {backoff:.2f}s")
+                    await asyncio.sleep(backoff)
+                    last_exc = e
+                    continue
+                logger.error(f"TMDB API error for {endpoint}: {status} - {e.response.text[:200]}")
+                raise
+            except httpx.RequestError as e:
+                attempts += 1
+                backoff = (2 ** (attempts - 1)) + random.uniform(0, 0.25)
+                logger.warning(f"TMDB request error for {endpoint}: {e}; retry {attempts}/3 in {backoff:.2f}s")
+                await asyncio.sleep(backoff)
+                last_exc = e
+                continue
+
+        # Exhausted retries
+        if last_exc:
+            raise last_exc
+        return {}
 
     @alru_cache(maxsize=2000)
     async def find_by_imdb_id(self, imdb_id: str) -> tuple[int | None, str | None]:
@@ -107,13 +139,13 @@ class TMDBService:
     @alru_cache(maxsize=5000)
     async def get_movie_details(self, movie_id: int) -> dict:
         """Get details of a specific movie with credits and external IDs."""
-        params = {"append_to_response": "credits,external_ids"}
+        params = {"append_to_response": "credits,external_ids,keywords"}
         return await self._make_request(f"/movie/{movie_id}", params=params)
 
     @alru_cache(maxsize=5000)
     async def get_tv_details(self, tv_id: int) -> dict:
         """Get details of a specific TV series with credits and external IDs."""
-        params = {"append_to_response": "credits,external_ids"}
+        params = {"append_to_response": "credits,external_ids,keywords"}
         return await self._make_request(f"/tv/{tv_id}", params=params)
 
     @alru_cache(maxsize=1000)
@@ -137,12 +169,14 @@ class TMDBService:
         with_genres: str | None = None,
         sort_by: str = "popularity.desc",
         page: int = 1,
+        **kwargs,
     ) -> dict:
         """Get discover content based on params."""
         media_type = "movie" if media_type == "movie" else "tv"
         params = {"page": page, "sort_by": sort_by}
         if with_genres:
             params["with_genres"] = with_genres
-
+        if kwargs:
+            params.update(kwargs)
         endpoint = f"/discover/{media_type}"
         return await self._make_request(endpoint, params=params)

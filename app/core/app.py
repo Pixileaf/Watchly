@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,8 +11,10 @@ from loguru import logger
 
 from app.api.main import api_router
 from app.services.catalog_updater import BackgroundCatalogUpdater
+from app.startup.migration import migrate_tokens
 
 from .config import settings
+from .version import __version__
 
 # class InterceptHandler(logging.Handler):
 #     def emit(self, record):
@@ -35,6 +38,16 @@ async def lifespan(app: FastAPI):
     Manage application lifespan events (startup/shutdown).
     """
     global catalog_updater
+    task = asyncio.create_task(migrate_tokens())
+
+    # Ensure background exceptions are surfaced in logs
+    def _on_done(t: asyncio.Task):
+        try:
+            t.result()
+        except Exception as exc:
+            logger.error(f"migrate_tokens background task failed: {exc}")
+
+    task.add_done_callback(_on_done)
 
     # Startup
     if settings.AUTO_UPDATE_CATALOGS:
@@ -57,7 +70,7 @@ else:
 app = FastAPI(
     title="Watchly",
     description="Stremio catalog addon for movie and series recommendations",
-    version=settings.APP_VERSION,
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -73,10 +86,10 @@ app.add_middleware(
 # Static directory is at project root (3 levels up from app/core/app.py)
 # app/core/app.py -> app/core -> app -> root
 project_root = Path(__file__).resolve().parent.parent.parent
-static_dir = project_root / "static"
+static_dir = project_root / "app/static"
 
 if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/app/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 # Serve index.html at /configure and /{token}/configure
@@ -94,10 +107,12 @@ async def configure_page(token: str | None = None):
         announcement_html = (dynamic_announcement or "").strip()
         snippet = ""
         if announcement_html:
-            snippet = '\n                <div class="announcement">' f"{announcement_html}" "</div>"
+            snippet = f'\n                <div class="announcement">{announcement_html}</div>'
         html_content = html_content.replace("<!-- ANNOUNCEMENT_HTML -->", snippet, 1)
         # Inject version
-        html_content = html_content.replace("<!-- APP_VERSION -->", settings.APP_VERSION, 1)
+        html_content = html_content.replace("<!-- APP_VERSION -->", __version__, 1)
+        # Inject host
+        html_content = html_content.replace("<!-- APP_HOST -->", settings.HOST_NAME, 1)
         return HTMLResponse(content=html_content, media_type="text/html")
     return HTMLResponse(
         content="Watchly API is running. Static files not found.",

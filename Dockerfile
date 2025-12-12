@@ -1,30 +1,26 @@
-# Use Python 3.11 slim image as base
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
-
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    gcc \
+    gcc curl ca-certificates\
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Download the latest installer
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Run the installer then remove it
+RUN sh /uv-installer.sh && rm /uv-installer.sh
 
-# Copy application code (including static files)
+# Ensure the installed binary is on the `PATH`
+ENV PATH="/root/.local/bin/:$PATH"
+
 COPY app/ ./app/
-COPY static/ ./static/
 COPY main.py .
 COPY pyproject.toml .
+COPY uv.lock .
 
-ENTRYPOINT ["python", "main.py"]
+RUN uv sync --locked
+
+ENTRYPOINT ["uv", "run", "main.py"]

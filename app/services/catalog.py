@@ -1,145 +1,193 @@
-import asyncio
-from collections import Counter
+from datetime import datetime, timezone
 
-from loguru import logger
-
+from app.core.settings import CatalogConfig, UserSettings
+from app.services.row_generator import RowGeneratorService
+from app.services.scoring import ScoringService
 from app.services.stremio_service import StremioService
 from app.services.tmdb_service import TMDBService
-
-from .tmdb.genre import MOVIE_GENRE_TO_ID_MAP, SERIES_GENRE_TO_ID_MAP
+from app.services.user_profile import UserProfileService
 
 
 class DynamicCatalogService:
+    """
+    Generates dynamic catalog rows based on user library and preferences.
+    """
 
     def __init__(self, stremio_service: StremioService):
         self.stremio_service = stremio_service
         self.tmdb_service = TMDBService()
+        self.scoring_service = ScoringService()
+        self.user_profile_service = UserProfileService()
+        self.row_generator = RowGeneratorService(tmdb_service=self.tmdb_service)
 
     @staticmethod
     def normalize_type(type_):
         return "series" if type_ == "tv" else type_
 
-    def build_catalog_entry(self, item, label):
+    def build_catalog_entry(self, item, label, config_id):
+        item_id = item.get("_id", "")
+        # Use watchly.{config_id}.{item_id} format for better organization
+        if config_id in ["watchly.item", "watchly.loved", "watchly.watched"]:
+            # New Item-based catalog format
+            catalog_id = f"{config_id}.{item_id}"
+        elif item_id.startswith("tt") and config_id in ["watchly.loved", "watchly.watched"]:
+            catalog_id = f"{config_id}.{item_id}"
+        else:
+            catalog_id = item_id
+
+        name = item.get("name")
+
         return {
             "type": self.normalize_type(item.get("type")),
-            "id": item.get("_id"),
-            "name": f"Because you {label} {item.get('name')}",
+            "id": catalog_id,
+            "name": f"{label} {name}",
             "extra": [],
         }
 
-    def process_items(self, items, seen_items, seed, label):
-        entries = []
-        for item in items:
-            type_ = self.normalize_type(item.get("type"))
-            if item.get("_id") in seen_items or seed[type_]:
-                continue
-            seen_items.add(item.get("_id"))
-            seed[type_] = True
-            entries.append(self.build_catalog_entry(item, label))
-        return entries
-
-    async def get_watched_loved_catalogs(self, library_items: list[dict]):
-        seen_items = set()
+    async def get_theme_based_catalogs(
+        self, library_items: list[dict], user_settings: UserSettings | None = None
+    ) -> list[dict]:
         catalogs = []
 
-        seed = {
-            "watched": {
-                "movie": False,
-                "series": False,
-            },
-            "loved": {
-                "movie": False,
-                "series": False,
-            },
-        }
+        # 1. Build User Profile
+        # Combine loved and watched
+        all_items = library_items.get("loved", []) + library_items.get("watched", [])
 
-        loved_items = library_items.get("loved", [])
-        watched_items = library_items.get("watched", [])
+        # Deduplicate
+        unique_items = {item["_id"]: item for item in all_items}
 
-        catalogs += self.process_items(loved_items, seen_items, seed["loved"], "Loved")
-        catalogs += self.process_items(watched_items, seen_items, seed["watched"], "Watched")
+        # Score items
+        scored_objects = []
+
+        # Use only recent history for freshness
+        sorted_history = sorted(unique_items.values(), key=lambda x: x.get("_mtime", ""), reverse=True)
+        recent_history = sorted_history[:30]
+
+        for item_data in recent_history:
+            scored_obj = self.scoring_service.process_item(item_data)
+            scored_objects.append(scored_obj)
+
+        # Get excluded genres
+        excluded_movie_genres = []
+        excluded_series_genres = []
+        if user_settings:
+            excluded_movie_genres = [int(g) for g in user_settings.excluded_movie_genres]
+            excluded_series_genres = [int(g) for g in user_settings.excluded_series_genres]
+
+        # 2. Generate Thematic Rows with Type-Specific Profiles
+        # Generate for Movies
+        movie_profile = await self.user_profile_service.build_user_profile(
+            scored_objects, content_type="movie", excluded_genres=excluded_movie_genres
+        )
+        movie_rows = await self.row_generator.generate_rows(movie_profile, "movie")
+
+        for row in movie_rows:
+            # translated_title = await translation_service.translate(row.title, lang)
+            catalogs.append({"type": "movie", "id": row.id, "name": row.title, "extra": []})
+
+        # Generate for Series
+        series_profile = await self.user_profile_service.build_user_profile(
+            scored_objects, content_type="series", excluded_genres=excluded_series_genres
+        )
+        series_rows = await self.row_generator.generate_rows(series_profile, "series")
+
+        for row in series_rows:
+            # translated_title = await translation_service.translate(row.title, lang)
+            catalogs.append({"type": "series", "id": row.id, "name": row.title, "extra": []})
 
         return catalogs
 
-    async def _get_item_genres(self, item_id: str, item_type: str) -> list[str]:
-        """Fetch genres for a specific item from TMDB."""
-        try:
-            # Convert IMDB ID to TMDB ID
-            tmdb_id = None
-            media_type = "movie" if item_type == "movie" else "tv"
-
-            if item_id.startswith("tt"):
-                tmdb_id, _ = await self.tmdb_service.find_by_imdb_id(item_id)
-            elif item_id.startswith("tmdb:"):
-                tmdb_id = int(item_id.split(":")[1])
-
-            if not tmdb_id:
-                return []
-
-            # Fetch details
-            if media_type == "movie":
-                details = await self.tmdb_service.get_movie_details(tmdb_id)
-            else:
-                details = await self.tmdb_service.get_tv_details(tmdb_id)
-
-            return [g.get("name") for g in details.get("genres", [])]
-        except Exception as e:
-            logger.warning(f"Failed to fetch genres for {item_id}: {e}")
-            return []
-
-    async def get_genre_based_catalogs(self, library_items: list[dict]):
-        # get separate movies and series lists from loved items
-        loved_movies = [item for item in library_items.get("loved", []) if item.get("type") == "movie"]
-        loved_series = [item for item in library_items.get("loved", []) if item.get("type") == "series"]
-
-        # only take last 5 results from loved movies and series
-        loved_movies = loved_movies[:5]
-        loved_series = loved_series[:5]
-
-        # fetch genres concurrently
-        movie_tasks = [self._get_item_genres(item.get("_id").strip(), "movie") for item in loved_movies]
-        series_tasks = [self._get_item_genres(item.get("_id").strip(), "series") for item in loved_series]
-
-        movie_genres_list = await asyncio.gather(*movie_tasks)
-        series_genres_list = await asyncio.gather(*series_tasks)
-
-        # now flatten list and count the occurance of each genre for both movies and series separately
-        movie_genre_counts = Counter(
-            [genre for sublist in movie_genres_list for genre in sublist if genre in MOVIE_GENRE_TO_ID_MAP]
-        )
-        series_genre_counts = Counter(
-            [genre for sublist in series_genres_list for genre in sublist if genre in SERIES_GENRE_TO_ID_MAP]
-        )
-        sorted_movie_genres = sorted(movie_genre_counts.items(), key=lambda x: x[1], reverse=True)
-        sorted_series_genres = sorted(series_genre_counts.items(), key=lambda x: x[1], reverse=True)
-
-        # now get the top 2 genres for movies and series
-        top_2_movie_genre_names = [genre for genre, _ in sorted_movie_genres[:2]]
-        top_2_series_genre_names = [genre for genre, _ in sorted_series_genres[:2]]
-
-        # convert id to name
-        top_2_movie_genres = [str(MOVIE_GENRE_TO_ID_MAP[genre_name]) for genre_name in top_2_movie_genre_names]
-        top_2_series_genres = [str(SERIES_GENRE_TO_ID_MAP[genre_name]) for genre_name in top_2_series_genre_names]
+    async def get_dynamic_catalogs(
+        self, library_items: list[dict], user_settings: UserSettings | None = None
+    ) -> list[dict]:
+        """
+        Generate all dynamic catalog rows.
+        """
         catalogs = []
+        lang = user_settings.language if user_settings else "en-US"
 
-        if top_2_movie_genres:
-            catalogs.append(
-                {
-                    "type": "movie",
-                    "id": f"watchly.genre.{'_'.join(top_2_movie_genres)}",
-                    "name": "You might also Like",
-                    "extra": [],
-                }
-            )
+        # Theme Based
+        theme_config = next((c for c in user_settings.catalogs if c.id == "watchly.theme"), None)
 
-        if top_2_series_genres:
-            catalogs.append(
-                {
-                    "type": "series",
-                    "id": f"watchly.genre.{'_'.join(top_2_series_genres)}",
-                    "name": "You might also Like",
-                    "extra": [],
-                }
-            )
+        if theme_config and theme_config.enabled:
+            catalogs.extend(await self.get_theme_based_catalogs(library_items, user_settings))
+
+        # Item Based (Loved/Watched)
+        loved_config = next((c for c in user_settings.catalogs if c.id == "watchly.loved"), None)
+        watched_config = next((c for c in user_settings.catalogs if c.id == "watchly.watched"), None)
+
+        # Fallback for old settings (watchly.item)
+        if not loved_config and not watched_config:
+            old_config = next((c for c in user_settings.catalogs if c.id == "watchly.item"), None)
+            if old_config and old_config.enabled:
+                # Create temporary configs
+                loved_config = CatalogConfig(id="watchly.loved", name=None, enabled=True)
+                watched_config = CatalogConfig(id="watchly.watched", name=None, enabled=True)
+
+        # Movies
+        await self._add_item_based_rows(catalogs, library_items, "movie", lang, loved_config, watched_config)
+        # Series
+        await self._add_item_based_rows(catalogs, library_items, "series", lang, loved_config, watched_config)
 
         return catalogs
+
+    async def _add_item_based_rows(
+        self,
+        catalogs: list,
+        library_items: dict,
+        content_type: str,
+        language: str,
+        loved_config,
+        watched_config,
+    ):
+        """Helper to add 'Because you watched' and 'More like' rows."""
+
+        # Helper to parse date
+        def get_date(item):
+
+            val = item.get("state", {}).get("lastWatched")
+            if val:
+                try:
+                    if isinstance(val, str):
+                        return datetime.fromisoformat(val.replace("Z", "+00:00"))
+                    return val
+                except (ValueError, TypeError):
+                    pass
+            # Fallback to mtime
+            val = item.get("_mtime")
+            if val:
+                try:
+                    return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    pass
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+        # 1. More Like <Loved Item>
+        last_loved = None  # Initialize for the watched check
+        if loved_config and loved_config.enabled:
+            loved = [i for i in library_items.get("loved", []) if i.get("type") == content_type]
+            loved.sort(key=get_date, reverse=True)
+
+            last_loved = loved[0] if loved else None
+            if last_loved:
+                label = loved_config.name
+
+                catalogs.append(self.build_catalog_entry(last_loved, label, "watchly.loved"))
+
+        # 2. Because you watched <Watched Item>
+        if watched_config and watched_config.enabled:
+            watched = [i for i in library_items.get("watched", []) if i.get("type") == content_type]
+            watched.sort(key=get_date, reverse=True)
+
+            last_watched = None
+            for item in watched:
+                # Avoid duplicate row if it's the same item as 'More like'
+                if last_loved and item.get("_id") == last_loved.get("_id"):
+                    continue
+                last_watched = item
+                break
+
+            if last_watched:
+                label = watched_config.name
+
+                catalogs.append(self.build_catalog_entry(last_watched, label, "watchly.watched"))
