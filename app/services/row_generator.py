@@ -108,7 +108,7 @@ class RowGeneratorService:
                         f"Genre: {get_gname(g_id)} + Keyword: {normalize_keyword(kw_name)}"
                     )
                     if not title:
-                        title = f"{get_gname(g_id)} {normalize_keyword(kw_name)}"
+                        title = f"{normalize_keyword(kw_name)} {get_gname(g_id)}"
                         # keyword and genre can have same name sometimes, remove if so
                         title = " ".join(dict.fromkeys(title.split()))
 
@@ -129,7 +129,7 @@ class RowGeneratorService:
             if c_adj:
                 title = await gemini_service.generate_content_async(f"Genre: {get_gname(g_id)} + Country: {c_adj}")
                 if not title:
-                    title = f"{get_gname(g_id)} {c_adj}"
+                    title = f"{c_adj} {get_gname(g_id)}"
                 rows.append(
                     RowDefinition(
                         title=title,
@@ -152,7 +152,7 @@ class RowGeneratorService:
                 decade_str = str(decade_start)[2:] + "s"  # "90s"
                 title = await gemini_service.generate_content_async(f"Genre: {get_gname(g_id)} + Era: {decade_str}")
                 if not title:
-                    title = f"{get_gname(g_id)} {decade_str}"
+                    title = f"{decade_str} {get_gname(g_id)}"
                 rows.append(
                     RowDefinition(
                         title=title,
