@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import random
 
 import httpx
@@ -148,21 +149,21 @@ class TMDBService:
         params = {"append_to_response": "credits,external_ids,keywords"}
         return await self._make_request(f"/tv/{tv_id}", params=params)
 
-    @alru_cache(maxsize=1000)
+    @alru_cache(maxsize=1000, ttl=6 * 60 * 60)
     async def get_recommendations(self, tmdb_id: int, media_type: str, page: int = 1) -> dict:
         """Get recommendations based on TMDB ID and media type."""
         params = {"page": page}
         endpoint = f"/{media_type}/{tmdb_id}/recommendations"
         return await self._make_request(endpoint, params=params)
 
-    @alru_cache(maxsize=1000)
+    @alru_cache(maxsize=1000, ttl=6 * 60 * 60)
     async def get_similar(self, tmdb_id: int, media_type: str, page: int = 1) -> dict:
         """Get similar content based on TMDB ID and media type."""
         params = {"page": page}
         endpoint = f"/{media_type}/{tmdb_id}/similar"
         return await self._make_request(endpoint, params=params)
 
-    @alru_cache(maxsize=1000)
+    @alru_cache(maxsize=1000, ttl=30 * 60)
     async def get_discover(
         self,
         media_type: str,
@@ -180,3 +181,25 @@ class TMDBService:
             params.update(kwargs)
         endpoint = f"/discover/{media_type}"
         return await self._make_request(endpoint, params=params)
+
+    @alru_cache(maxsize=500, ttl=60 * 60)
+    async def get_trending(self, media_type: str, time_window: str = "week", page: int = 1) -> dict:
+        """Get trending content. media_type: 'movie' or 'tv'. time_window: 'day' or 'week'"""
+        mt = "movie" if media_type == "movie" else "tv"
+        params = {"page": page}
+        endpoint = f"/trending/{mt}/{time_window}"
+        return await self._make_request(endpoint, params=params)
+
+    @alru_cache(maxsize=500, ttl=60 * 60)
+    async def get_top_rated(self, media_type: str, page: int = 1) -> dict:
+        """Get top-rated content list."""
+        mt = "movie" if media_type == "movie" else "tv"
+        params = {"page": page}
+        endpoint = f"/{mt}/top_rated"
+        return await self._make_request(endpoint, params=params)
+
+
+# Singleton factory to reuse clients and async caches per language
+@functools.lru_cache(maxsize=16)
+def get_tmdb_service(language: str = "en-US") -> TMDBService:
+    return TMDBService(language=language)
