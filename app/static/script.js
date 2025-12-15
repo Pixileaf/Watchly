@@ -329,8 +329,8 @@ function setStremioLoggedInState(authKey) {
     if (!stremioLoginBtn) return;
     stremioLoginText.textContent = 'Logout';
     stremioLoginBtn.setAttribute('data-action', 'logout');
-    stremioLoginBtn.classList.remove('bg-stremio', 'hover:bg-stremio-hover');
-    stremioLoginBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'border-red-700', 'shadow-red-900/20');
+    stremioLoginBtn.classList.remove('bg-stremio', 'hover:bg-stremio-hover', 'hover:bg-white', 'hover:text-black', 'hover:border-white/10', 'border-stremio-border');
+    stremioLoginBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'border-red-700', 'shadow-red-900/20', 'text-white');
 
 
 
@@ -343,7 +343,7 @@ function setStremioLoggedOutState() {
     if (!stremioLoginBtn) return;
     stremioLoginText.textContent = 'Login with Stremio';
     stremioLoginBtn.removeAttribute('data-action');
-    stremioLoginBtn.classList.add('bg-stremio', 'hover:bg-stremio-hover');
+    stremioLoginBtn.classList.add('bg-stremio', 'hover:bg-white', 'hover:text-black', 'hover:border-white/10', 'border-stremio-border', 'text-white');
     stremioLoginBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'border-red-700', 'shadow-red-900/20');
 
 
@@ -477,11 +477,11 @@ function initializeGenreLists() {
 function renderGenreList(container, genres, namePrefix) {
     if (!container) return;
     container.innerHTML = genres.map(genre => `
-        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition group">
+        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition group">
             <div class="relative flex items-center">
                 <input type="checkbox" name="${namePrefix}" value="${genre.id}"
-                    class="peer appearance-none w-5 h-5 border-2 border-slate-600 rounded bg-slate-900 checked:bg-blue-500 checked:border-blue-500 transition-colors">
-                <svg class="absolute w-3.5 h-3.5 text-white left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity"
+                    class="peer appearance-none w-5 h-5 border-2 border-slate-600 rounded bg-slate-900 checked:bg-white checked:border-white transition-colors">
+                <svg class="absolute w-3.5 h-3.5 text-black left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
                 </svg>
@@ -555,31 +555,32 @@ function moveCatalogDown(index) {
 function createCatalogItem(cat, index) {
     const item = document.createElement('div');
     const disabledClass = !cat.enabled ? 'opacity-50' : '';
-    item.className = `catalog-item group bg-slate-900 border border-slate-700 rounded-xl p-4 transition-all hover:border-slate-600 ${disabledClass}`;
+    // Modern neutral glass card to match new theme
+    item.className = `catalog-item group bg-neutral-900/60 border border-white/10 rounded-xl p-4 backdrop-blur-sm transition-all hover:border-white/20 hover:bg-neutral-900/70 hover:shadow-lg hover:shadow-black/20 ${disabledClass}`;
     item.setAttribute('data-index', index);
 
     const isRenamable = cat.id !== 'watchly.theme';
     item.innerHTML = `
         <div class="flex items-start gap-3 sm:items-center sm:gap-4">
             <div class="sort-buttons flex flex-col gap-1 flex-shrink-0 mt-0.5 sm:mt-0">
-                <button type="button" class="action-btn move-up p-1 text-slate-500 hover:text-white hover:bg-slate-700 rounded transition disabled:opacity-30 disabled:hover:bg-transparent" title="Move up" ${index === 0 ? 'disabled' : ''}>
+                <button type="button" class="action-btn move-up p-1 text-slate-500 hover:text-white hover:bg-white/10 rounded transition disabled:opacity-30 disabled:hover:bg-transparent" title="Move up" ${index === 0 ? 'disabled' : ''}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
                 </button>
-                <button type="button" class="action-btn move-down p-1 text-slate-500 hover:text-white hover:bg-slate-700 rounded transition disabled:opacity-30 disabled:hover:bg-transparent" title="Move down" ${index === catalogs.length - 1 ? 'disabled' : ''}>
+                <button type="button" class="action-btn move-down p-1 text-slate-500 hover:text-white hover:bg-white/10 rounded transition disabled:opacity-30 disabled:hover:bg-transparent" title="Move down" ${index === catalogs.length - 1 ? 'disabled' : ''}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
                 </button>
             </div>
             <div class="flex-grow min-w-0 space-y-1 sm:space-y-0 sm:flex sm:items-center sm:gap-4">
                 <div class="name-container relative flex items-center min-w-0 h-auto sm:h-9 flex-grow">
                     <span class="catalog-name-text font-medium text-white break-words leading-snug sm:truncate cursor-default w-full">${escapeHtml(cat.name)}</span>
-                    <input type="text" class="catalog-name-input hidden absolute inset-0 w-full bg-slate-950 border border-blue-500 rounded-lg px-3 text-white outline-none text-sm font-medium shadow-sm font-mono" value="${escapeHtml(cat.name)}">
-                    ${isRenamable ? `<button type="button" class="action-btn rename-btn ml-2 p-1.5 flex-shrink-0 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100" title="Rename"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : ''}
+                    <input type="text" class="catalog-name-input hidden absolute inset-0 w-full bg-neutral-950 border border-white/20 rounded-lg px-3 text-white outline-none text-sm font-medium shadow-sm font-mono focus:ring-2 focus:ring-white/20 focus:border-white/30" value="${escapeHtml(cat.name)}">
+                    ${isRenamable ? `<button type="button" class="action-btn rename-btn ml-2 p-1.5 flex-shrink-0 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100" title="Rename"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : ''}
                 </div>
                 <div class="catalog-desc sm:hidden text-xs text-slate-500 leading-relaxed">${escapeHtml(cat.description || '')}</div>
             </div>
             <label class="switch relative inline-flex items-center cursor-pointer flex-shrink-0 ml-auto sm:ml-0">
                 <input type="checkbox" class="sr-only peer" ${cat.enabled ? 'checked' : ''} data-catalog-id="${cat.id}">
-                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-white/20 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white peer-checked:after:bg-black peer-checked:after:border-black"></div>
             </label>
         </div>
         <div class="catalog-desc hidden sm:block text-xs text-slate-500 mt-2 ml-8 pl-1">${escapeHtml(cat.description || '')}</div>
@@ -805,9 +806,9 @@ function showToast(message, type = 'info', duration = 5000) {
             icon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>`;
-            bgColor = 'bg-blue-500/10';
-            borderColor = 'border-blue-500/30';
-            iconColor = 'text-blue-400';
+            bgColor = 'bg-white/5';
+            borderColor = 'border-white/10';
+            iconColor = 'text-slate-200';
     }
 
     toast.innerHTML = `
