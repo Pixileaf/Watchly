@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -89,6 +91,11 @@ async def create_token(payload: TokenRequest, request: Request) -> TokenResponse
         "email": resolved_email or email or "",
         "settings": user_settings.model_dump(),
     }
+    if existing_data:
+        payload_to_store["last_updated"] = existing_data.get("last_updated")
+    else:
+        payload_to_store["last_updated"] = datetime.now(timezone.utc).isoformat()
+
     if email and password:
         payload_to_store["password"] = password
 
@@ -101,12 +108,13 @@ async def create_token(payload: TokenRequest, request: Request) -> TokenResponse
     # Maybe generate manifest and check if catalogs exist and if not raise error?
     expires_in = settings.TOKEN_TTL_SECONDS if settings.TOKEN_TTL_SECONDS > 0 else None
 
+    await bundle.close()
+
     return TokenResponse(
         token=token,
         manifestUrl=manifest_url,
         expiresInSeconds=expires_in,
     )
-    await bundle.close()
 
 
 async def get_stremio_user_data(payload: TokenRequest) -> tuple[str, str]:
