@@ -1209,7 +1209,7 @@ async function initializeAnnouncement() {
     if (!container || !content) return;
 
     try {
-        const res = await fetch('/announcement');
+        const res = await fetch('/announcement/');
         if (!res.ok) return;
 
         let data = null;
