@@ -71,8 +71,8 @@ function updateMobileLayout() {
             sidebarEl.style.height = `calc(100dvh - ${h}px)`;
         } else {
             mainEl.style.paddingTop = '';
-            sidebarEl.style.top = '';
-            sidebarEl.style.height = '';
+            sidebarEl.style.top = '0';
+            sidebarEl.style.height = '100dvh';
         }
     } catch (e) { /* noop */ }
 }

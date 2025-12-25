@@ -101,6 +101,25 @@
             overscroll-behavior: contain;
         }
 
+        /* Desktop: Sidebar fixed, main content scrolls independently */
+        @media (min-width: 768px) {
+            #mainSidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100dvh;
+                overflow-y: auto;
+            }
+            main {
+                position: fixed;
+                top: 0;
+                right: 0;
+                left: 288px; /* w-72 = 18rem = 288px */
+                height: 100dvh;
+                overflow-y: auto;
+            }
+        }
+
         /* High-contrast text selection to avoid blending with blue OS highlight */
         ::selection {
             background: rgba(59, 130, 246, 0.35); /* blue-500 @ 35% */
@@ -161,7 +180,7 @@
     </style>
 </head>
 
-<body class="min-h-screen text-slate-200 font-sans antialiased overflow-x-hidden flex flex-col md:flex-row">
+<body class="min-h-screen text-slate-200 font-sans antialiased overflow-x-hidden">
 
     <!-- Mobile Header -->
     <div id="mobileHeader"
@@ -180,7 +199,7 @@
     <div id="mobileNavBackdrop" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
     <!-- Sidebar Navigation -->
     <aside id="mainSidebar"
-        class="fixed inset-y-0 left-0 z-40 w-72 transform -translate-x-full transition-transform duration-300 ease-out bg-neutral-950/50 backdrop-blur-xl border-b md:border-b-0 md:border-r border-slate-800 flex flex-col flex-shrink-0 md:relative md:translate-x-0 md:flex pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+        class="fixed inset-y-0 left-0 z-40 w-72 transform -translate-x-full transition-transform duration-300 ease-out bg-neutral-950/50 backdrop-blur-xl border-b md:border-b-0 md:border-r border-slate-800 flex flex-col flex-shrink-0 md:translate-x-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <div class="p-6 md:p-8 flex-col items-start gap-4 hidden md:flex">
             <div class="flex items-center gap-3">
                 <img src="/app/static/logo.png" alt="Watchly"
@@ -304,7 +323,8 @@
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-grow min-h-[100dvh] overflow-y-auto relative no-scrollbar">
+    <main
+        class="min-h-[100dvh] md:fixed md:inset-y-0 md:right-0 md:left-72 overflow-y-auto relative no-scrollbar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <div class="max-w-2xl mx-auto px-4 py-8 md:py-16 pb-[calc(env(safe-area-inset-bottom)+8rem)]">
 
             <form id="configForm">
