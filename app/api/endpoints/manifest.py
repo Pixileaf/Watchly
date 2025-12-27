@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from fastapi import HTTPException
 from fastapi.routing import APIRouter
 from loguru import logger
@@ -21,10 +19,7 @@ def get_base_manifest():
         "id": settings.ADDON_ID,
         "version": __version__,
         "name": settings.ADDON_NAME,
-        "description": (
-            "Movie and series recommendations based on your Stremio library. \nLast updated on:"
-            f" {datetime.now(timezone.utc).strftime('%d %B %Y, %H:%M:%S')} UTC"
-        ),
+        "description": "Movie and series recommendations based on your Stremio library.",
         "logo": "https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/logo.png",
         "background": ("https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/cover.png"),
         "resources": ["catalog"],
