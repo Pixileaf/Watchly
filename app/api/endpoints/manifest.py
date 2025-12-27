@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, Response
 from fastapi.routing import APIRouter
 from loguru import logger
@@ -10,25 +12,9 @@ from app.services.catalog_updater import get_config_id
 from app.services.stremio.service import StremioBundle
 from app.services.token_store import token_store
 from app.services.translation import translation_service
+from app.utils.catalog import get_catalogs_from_config
 
 router = APIRouter()
-
-
-def get_catalogs_from_config(
-    user_settings: UserSettings, cat_id: str, default_name: str, default_movie: bool, default_series: bool
-):
-    catalogs = []
-    config = next((c for c in user_settings.catalogs if c.id == cat_id), None)
-    if not config or config.enabled:
-        name = config.name if config and config.name else default_name
-        enabled_movie = getattr(config, "enabled_movie", default_movie) if config else default_movie
-        enabled_series = getattr(config, "enabled_series", default_series) if config else default_series
-
-        if enabled_movie:
-            catalogs.append({"type": "movie", "id": cat_id, "name": name, "extra": []})
-        if enabled_series:
-            catalogs.append({"type": "series", "id": cat_id, "name": name, "extra": []})
-    return catalogs
 
 
 def get_base_manifest(user_settings: UserSettings | None = None):
@@ -47,7 +33,10 @@ def get_base_manifest(user_settings: UserSettings | None = None):
         "id": settings.ADDON_ID,
         "version": __version__,
         "name": settings.ADDON_NAME,
-        "description": "Movie and series recommendations based on your Stremio library",
+        "description": (
+            "Movie and series recommendations based on your Stremio library. \nLast updated on:"
+            f" {datetime.now(timezone.utc).strftime('%d %B %Y, %H:%M:%S')} UTC"
+        ),
         "logo": "https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/logo.png",
         "background": ("https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/cover.png"),
         "resources": ["catalog"],

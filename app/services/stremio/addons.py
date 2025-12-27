@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
 from loguru import logger
 
+from app.core.config import settings
 from app.services.stremio.client import StremioClient
 
 
@@ -63,23 +65,22 @@ class StremioAddonService:
         """
         Inject dynamic catalogs into the installed Watchly addon.
         """
-        from app.core.config import settings
-
-        # Base catalogs that are always present
-        BASE_CATALOGS = [
-            {"type": "movie", "id": "watchly.rec", "name": "Top Picks for You", "extra": []},
-            {"type": "series", "id": "watchly.rec", "name": "Top Picks for You", "extra": []},
-        ]
 
         addons = await self.get_addons(auth_key)
-        full_catalogs = BASE_CATALOGS + catalogs
 
         found = False
         for addon in addons:
             if addon.get("manifest", {}).get("id") == settings.ADDON_ID and match_hostname(
                 addon.get("transportUrl"), settings.HOST_NAME
             ):
-                addon["manifest"]["catalogs"] = full_catalogs
+                addon["manifest"]["catalogs"] = catalogs
+                # also update description with updated time
+                # get description from existing addon manifest
+                description = addon.get("manifest", {}).get("description", "")
+                addon["manifest"]["description"] = (
+                    f"{description}\nLast updated on:"
+                    f" {datetime.now(timezone.utc).strftime('%d %B %Y, %H:%M:%S')} UTC"
+                )
                 found = True
                 break
 
@@ -91,7 +92,6 @@ class StremioAddonService:
 
     async def is_addon_installed(self, auth_key: str) -> bool:
         """Check if the Watchly addon is present in the user's collection."""
-        from app.core.config import settings
 
         addons = await self.get_addons(auth_key)
         for addon in addons:

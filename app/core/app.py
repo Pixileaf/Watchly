@@ -29,11 +29,6 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to close TokenStore Redis client: {exc}")
 
 
-if settings.APP_ENV != "development":
-    lifespan = lifespan
-else:
-    lifespan = None
-
 app = FastAPI(
     title="Watchly",
     description="Stremio catalog addon for movie and series recommendations",
@@ -80,7 +75,6 @@ async def block_missing_token_middleware(request: Request, call_next):
 
 
 # Serve static files
-# Static directory is at project root (3 levels up from app/core/app.py)
 # app/core/app.py -> app/core -> app -> root
 project_root = Path(__file__).resolve().parent.parent.parent
 static_dir = project_root / "app/static"

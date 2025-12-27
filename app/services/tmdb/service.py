@@ -63,13 +63,11 @@ class TMDBService:
 
     async def get_recommendations(self, tmdb_id: int, media_type: str, page: int = 1) -> dict[str, Any]:
         """Get recommendations based on TMDB ID and media type."""
-        logger.info(f"Fetching recommendations for: {tmdb_id}")
         params = {"page": page}
         return await self.client.get(f"/{media_type}/{tmdb_id}/recommendations", params=params)
 
     async def get_similar(self, tmdb_id: int, media_type: str, page: int = 1) -> dict[str, Any]:
         """Get similar content based on TMDB ID and media type."""
-        logger.info(f"Fetching similar for {tmdb_id}")
         params = {"page": page}
         return await self.client.get(f"/{media_type}/{tmdb_id}/similar", params=params)
 
