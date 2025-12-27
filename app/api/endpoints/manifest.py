@@ -1,32 +1,20 @@
-from fastapi import HTTPException, Response
+from fastapi import HTTPException
 from fastapi.routing import APIRouter
 from loguru import logger
 
 from app.core.config import settings
-from app.core.settings import UserSettings, get_default_settings
+from app.core.settings import UserSettings
 from app.core.version import __version__
 from app.services.catalog import DynamicCatalogService
 from app.services.catalog_updater import get_config_id
 from app.services.stremio.service import StremioBundle
 from app.services.token_store import token_store
 from app.services.translation import translation_service
-from app.utils.catalog import get_catalogs_from_config
 
 router = APIRouter()
 
 
-def get_base_manifest(user_settings: UserSettings | None = None):
-    catalogs = []
-
-    if user_settings:
-        catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
-        catalogs.extend(
-            get_catalogs_from_config(user_settings, "watchly.creators", "From your favourite Creators", False, False)
-        )
-    else:
-        # Default: empty catalogs
-        catalogs = []
-
+def get_base_manifest():
     return {
         "id": settings.ADDON_ID,
         "version": __version__,
@@ -37,7 +25,7 @@ def get_base_manifest(user_settings: UserSettings | None = None):
         "resources": ["catalog"],
         "types": ["movie", "series"],
         "idPrefixes": ["tt"],
-        "catalogs": catalogs,
+        "catalogs": [],
         "behaviorHints": {"configurable": True, "configurationRequired": False},
         "stremioAddonsConfig": {
             "issuer": "https://stremio-addons.net",
@@ -48,8 +36,14 @@ def get_base_manifest(user_settings: UserSettings | None = None):
     }
 
 
-async def build_dynamic_catalogs(bundle: StremioBundle, auth_key: str, user_settings: UserSettings) -> list[dict]:
+async def build_dynamic_catalogs(
+    bundle: StremioBundle, auth_key: str, user_settings: UserSettings | None
+) -> list[dict]:
     # Fetch library using bundle directly
+    if not user_settings:
+        logger.error("User settings not found. Please reconfigure the addon.")
+        raise HTTPException(status_code=401, detail="User settings not found. Please reconfigure the addon.")
+
     library_items = await bundle.library.get_library_items(auth_key)
     dynamic_catalog_service = DynamicCatalogService(
         language=user_settings.language,
@@ -57,7 +51,7 @@ async def build_dynamic_catalogs(bundle: StremioBundle, auth_key: str, user_sett
     return await dynamic_catalog_service.get_dynamic_catalogs(library_items, user_settings)
 
 
-async def _manifest_handler(response: Response, token: str):
+async def _manifest_handler(token: str):
     # response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes
     if not token:
         raise HTTPException(status_code=401, detail="Missing token. Please reconfigure the addon.")
@@ -74,7 +68,7 @@ async def _manifest_handler(response: Response, token: str):
     if not creds:
         raise HTTPException(status_code=401, detail="Token not found. Please reconfigure the addon.")
 
-    base_manifest = get_base_manifest(user_settings)
+    base_manifest = get_base_manifest()
 
     bundle = StremioBundle()
     fetched_catalogs = []
@@ -106,7 +100,7 @@ async def _manifest_handler(response: Response, token: str):
             fetched_catalogs = await build_dynamic_catalogs(
                 bundle,
                 auth_key,
-                user_settings or get_default_settings(),
+                user_settings,
             )
     except Exception as e:
         logger.exception(f"[{token}] Dynamic catalog build failed: {e}")
@@ -149,5 +143,5 @@ async def manifest():
 
 
 @router.get("/{token}/manifest.json")
-async def manifest_token(response: Response, token: str):
-    return await _manifest_handler(response, token)
+async def manifest_token(token: str):
+    return await _manifest_handler(token)
