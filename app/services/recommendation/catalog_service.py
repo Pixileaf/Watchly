@@ -11,6 +11,7 @@ from app.core.settings import UserSettings, get_default_settings
 from app.models.taste_profile import TasteProfile
 from app.services.catalog_updater import catalog_updater
 from app.services.profile.integration import ProfileIntegration
+from app.services.recommendation.all_based import AllBasedService
 from app.services.recommendation.creators import CreatorsService
 from app.services.recommendation.item_based import ItemBasedService
 from app.services.recommendation.theme_based import ThemeBasedService
@@ -19,6 +20,9 @@ from app.services.recommendation.utils import pad_to_min
 from app.services.stremio.service import StremioBundle
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
+
+PAD_RECOMMENDATIONS_THRESHOLD = 8
+PAD_RECOMMENDATIONS_TARGET = 10
 
 
 class CatalogService:
@@ -98,11 +102,12 @@ class CatalogService:
             )
 
             # Pad if needed
-            if len(recommendations) < min_items:
+            # TODO: This is risky because it can fetch too many unrelated items.
+            if recommendations and len(recommendations) < PAD_RECOMMENDATIONS_THRESHOLD:
                 recommendations = await pad_to_min(
                     content_type,
                     recommendations,
-                    min_items,
+                    PAD_RECOMMENDATIONS_TARGET,
                     services["tmdb"],
                     user_settings,
                     watched_tmdb,
@@ -131,18 +136,16 @@ class CatalogService:
             raise HTTPException(status_code=400, detail="Invalid type. Use 'movie' or 'series'")
 
         # Supported IDs
-        if catalog_id not in ["watchly.rec", "watchly.creators"] and not any(
-            catalog_id.startswith(p)
-            for p in (
-                "watchly.theme.",
-                "watchly.loved.",
-                "watchly.watched.",
-            )
-        ):
+        supported_base = ["watchly.rec", "watchly.creators", "watchly.all.loved", "watchly.liked.all"]
+        supported_prefixes = ("watchly.theme.", "watchly.loved.", "watchly.watched.")
+        if catalog_id not in supported_base and not any(catalog_id.startswith(p) for p in supported_prefixes):
             logger.warning(f"Invalid id: {catalog_id}")
             raise HTTPException(
                 status_code=400,
-                detail=("Invalid id. Supported: 'watchly.rec', 'watchly.creators', 'watchly.theme.<params>'"),
+                detail=(
+                    "Invalid id. Supported: 'watchly.rec', 'watchly.creators', "
+                    "'watchly.theme.<params>', 'watchly.all.loved', 'watchly.liked.all'"
+                ),
             )
 
     async def _resolve_auth(self, bundle: StremioBundle, credentials: dict, token: str) -> str:
@@ -189,6 +192,7 @@ class CatalogService:
             "theme": ThemeBasedService(tmdb_service, user_settings),
             "top_picks": TopPicksService(tmdb_service, user_settings),
             "creators": CreatorsService(tmdb_service, user_settings),
+            "all_based": AllBasedService(tmdb_service, user_settings),
         }
 
     def _get_catalog_limits(self, catalog_id: str, user_settings: UserSettings) -> tuple[int, int]:
@@ -213,7 +217,7 @@ class CatalogService:
             max_items = max(min_items, min(DEFAULT_MAX_ITEMS, int(max_items)))
         except (ValueError, TypeError):
             logger.warning(
-                f"Invalid min/max items values. Falling back to defaults. "
+                "Invalid min/max items values. Falling back to defaults. "
                 f"min_items={min_items}, max_items={max_items}"
             )
             min_items, max_items = DEFAULT_MIN_ITEMS, DEFAULT_MAX_ITEMS
@@ -303,6 +307,22 @@ class CatalogService:
             else:
                 recommendations = []
             logger.info(f"Found {len(recommendations)} top picks for {content_type}")
+
+        # Based on what you loved
+        elif catalog_id in ("watchly.all.loved", "watchly.liked.all"):
+            item_type = "loved" if catalog_id == "watchly.all.loved" else "liked"
+            all_based_service: AllBasedService = services["all_based"]
+            recommendations = await all_based_service.get_recommendations_from_all_items(
+                library_items=library_items,
+                content_type=content_type,
+                watched_tmdb=watched_tmdb,
+                watched_imdb=watched_imdb,
+                whitelist=whitelist,
+                limit=max_items,
+                item_type=item_type,
+                profile=profile,
+            )
+            logger.info(f"Found {len(recommendations)} recommendations based on all {item_type} items")
 
         else:
             logger.warning(f"Unknown catalog ID: {catalog_id}")
