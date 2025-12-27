@@ -3,7 +3,7 @@ dynamic = ["version"]
 name = "watchly"
 description = "Personalized movie and series recommendations based on your library"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "apscheduler>=3.11.1",
     "async-lru>=2.0.5",
@@ -39,7 +39,7 @@ app = "app.core.app:app"
 # ==== black ====
 [tool.black]
 line-length = 120
-target-version = ['py311']
+target-version = ['py312']
 
 
 # ==== isort ====

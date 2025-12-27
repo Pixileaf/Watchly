@@ -14,41 +14,34 @@ from app.services.translation import translation_service
 router = APIRouter()
 
 
-def get_base_manifest(user_settings: UserSettings | None = None):
-    # Default catalog config
-    rec_config = None
-    if user_settings:
-        # Find config for 'recommended'
-        rec_config = next((c for c in user_settings.catalogs if c.id == "watchly.rec"), None)
+def get_catalogs_from_config(
+    user_settings: UserSettings, cat_id: str, default_name: str, default_movie: bool, default_series: bool
+):
+    catalogs = []
+    config = next((c for c in user_settings.catalogs if c.id == cat_id), None)
+    if not config or config.enabled:
+        name = config.name if config and config.name else default_name
+        enabled_movie = getattr(config, "enabled_movie", default_movie) if config else default_movie
+        enabled_series = getattr(config, "enabled_series", default_series) if config else default_series
 
-    # If disabled explicitly, don't include it.
-    # If not configured (None), default to enabled.
-    if rec_config and not rec_config.enabled:
-        catalogs = []
-    else:
-        name = rec_config.name if rec_config and rec_config.name else "Top Picks for You"
-        enabled_movie = getattr(rec_config, "enabled_movie", True) if rec_config else True
-        enabled_series = getattr(rec_config, "enabled_series", True) if rec_config else True
-
-        catalogs = []
         if enabled_movie:
-            catalogs.append(
-                {
-                    "type": "movie",
-                    "id": "watchly.rec",
-                    "name": name,
-                    "extra": [],
-                }
-            )
+            catalogs.append({"type": "movie", "id": cat_id, "name": name, "extra": []})
         if enabled_series:
-            catalogs.append(
-                {
-                    "type": "series",
-                    "id": "watchly.rec",
-                    "name": name,
-                    "extra": [],
-                }
-            )
+            catalogs.append({"type": "series", "id": cat_id, "name": name, "extra": []})
+    return catalogs
+
+
+def get_base_manifest(user_settings: UserSettings | None = None):
+    catalogs = []
+
+    if user_settings:
+        catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
+        catalogs.extend(
+            get_catalogs_from_config(user_settings, "watchly.creators", "From your favourite Creators", False, False)
+        )
+    else:
+        # Default: empty catalogs
+        catalogs = []
 
     return {
         "id": settings.ADDON_ID,
@@ -56,7 +49,7 @@ def get_base_manifest(user_settings: UserSettings | None = None):
         "name": settings.ADDON_NAME,
         "description": "Movie and series recommendations based on your Stremio library",
         "logo": "https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/logo.png",
-        "background": "https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/cover.png",
+        "background": ("https://raw.githubusercontent.com/TimilsinaBimal/Watchly/refs/heads/main/app/static/cover.png"),
         "resources": ["catalog"],
         "types": ["movie", "series"],
         "idPrefixes": ["tt"],
@@ -64,7 +57,9 @@ def get_base_manifest(user_settings: UserSettings | None = None):
         "behaviorHints": {"configurable": True, "configurationRequired": False},
         "stremioAddonsConfig": {
             "issuer": "https://stremio-addons.net",
-            "signature": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..ycLGL5WUjggv7PxKPqMLYQ.Y_cD-8wqoXqENdXbFmR1-Si39NtqBlsxEDdrEO0deciilBsWWAlPIglx85XFE4ScSfSqzNxrCZUjHjWWIb2LdcFuvE1RVBrFsUBXgbs5eQknnEL617pFtCWNh0bi37Xv.zYhJ87ZqcYZMRfxLY0bSGQ",  # noqa
+            "signature": (
+                "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..WSrhzzlj1TuDycD6QoVLuA.Dzmxzr4y83uqQF15r4tC1bB9-vtZRh1Rvy4BqgDYxu91c2esiJuov9KnnI_cboQCgZS7hjwnIqRSlQ-jEyGwXHHRerh9QklyfdxpXqNUyBgTWFzDOVdVvDYJeM_tGMmR.sezAChlWGV7lNS-t9HWB6A"  # noqa
+            ),
         },
     }
 
@@ -79,8 +74,7 @@ async def build_dynamic_catalogs(bundle: StremioBundle, auth_key: str, user_sett
 
 
 async def _manifest_handler(response: Response, token: str):
-    response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes
-
+    # response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes
     if not token:
         raise HTTPException(status_code=401, detail="Missing token. Please reconfigure the addon.")
 
