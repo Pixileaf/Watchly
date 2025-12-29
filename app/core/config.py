@@ -47,5 +47,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Get version from version.py (single source of truth)
 APP_VERSION = __version__
