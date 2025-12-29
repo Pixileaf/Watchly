@@ -7,26 +7,26 @@ assignees: ''
 ---
 
 ## Summary
-Describe the observable problem in one or two sentences.
-Focus on what happened, not why you think it happened.
+<!-- Describe the observable problem in one or two sentences.
+Focus on what happened, not why you think it happened. -->
 
 ## Expected behavior
-What you expected to happen.
+<!-- What you expected to happen. -->
 
 ## Actual behavior
-What actually happened.
+<!-- What actually happened. -->
 
 ## Steps to reproduce
-Provide the minimal steps needed to reproduce the issue.
+<!-- Provide the minimal steps needed to reproduce the issue. -->
 
 1.
 2.
 3.
 
-If the issue is intermittent, describe the conditions under which it occurs.
+<!-- If the issue is intermittent, describe the conditions under which it occurs. -->
 
 ## Environment
-Fill in what’s relevant.
+<!-- Fill in what’s relevant. -->
 
 - Instance:
     - [ ] beamup
@@ -35,4 +35,4 @@ Fill in what’s relevant.
 - Version:
 
 ## Logs / error output
-Paste exact logs, stack traces, or error messages [Paste all logs in case of self-host else Use chrome developer tools to paste API network log/error]
+<!-- Paste exact logs, stack traces, or error messages [Paste all logs in case of self-host else Use chrome developer tools to paste API network log/error] -->
