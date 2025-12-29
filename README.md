@@ -27,61 +27,9 @@
 
 ## Installation
 
-### Using Docker (Recommended)
+### Stremio Addon link
 
-You can pull the latest image from the GitHub Container Registry.
-
-1.  **Create a `docker-compose.yml` file:**
-
-    ```yaml
-    services:
-      redis:
-        image: redis:7-alpine
-        container_name: watchly-redis
-        restart: unless-stopped
-        volumes:
-          - redis_data:/data
-
-      watchly:
-        image: ghcr.io/timilsinabimal/watchly:latest
-        container_name: watchly
-        restart: unless-stopped
-        ports:
-          - "8000:8000"
-        env_file:
-          - .env
-        depends_on:
-          - redis
-
-    volumes:
-      redis_data:
-    ```
-
-2.  **Create a `.env` file:**
-
-    ```env
-    # Required
-    TMDB_API_KEY=your_tmdb_api_key_here
-    TOKEN_SALT=generate_a_random_secure_string_here
-    HOST_NAME=your_addon_url
-
-    # Optional
-    PORT=8000
-    REDIS_URL=redis://redis:6379/0
-    ADDON_ID=com.bimal.watchly
-    ADDON_NAME=Watchly
-    TOKEN_TTL_SECONDS=0
-    AUTO_UPDATE_CATALOGS=true
-    ```
-
-3.  **Start the application:**
-
-    ```bash
-    docker-compose up -d
-    ```
-
-4.  **Configure the addon:**
-    Open `http://localhost:8000/configure` in your browser to set up your Stremio credentials and install the addon.
+- [Watchly hosted by Render]([https://watchly-tinu.onrender.com])
 
 ## Development
 
