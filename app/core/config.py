@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     RECOMMENDATION_SOURCE_ITEMS_LIMIT: int = 10
     LIBRARY_ITEMS_LIMIT: int = 20
 
+    CATALOG_CACHE_TTL: int = 12 * 60 * 60  # 12 hours
+
     # AI
     DEFAULT_GEMINI_MODEL: str = "gemma-3-27b-it"
     GEMINI_API_KEY: str | None = None
@@ -45,5 +47,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Get version from version.py (single source of truth)
 APP_VERSION = __version__
