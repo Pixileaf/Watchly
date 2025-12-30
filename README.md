@@ -4,7 +4,7 @@
 
 ### Stremio Addon link
 
-- **[Watchly hosted by Render](https://watchly-tinu.onrender.com)**
+- **[Watchly hosted on Render](https://watchly-tinu.onrender.com)**
 
 ## Contributing
 
