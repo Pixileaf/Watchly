@@ -31,9 +31,9 @@ class Settings(BaseSettings):
     TOKEN_TTL_SECONDS: int = 0  # 0 = never expire
     ANNOUNCEMENT_HTML: str = ""
     AUTO_UPDATE_CATALOGS: bool = True
-    CATALOG_REFRESH_INTERVAL_SECONDS: int = 43200  # 12 hours
+    CATALOG_REFRESH_INTERVAL_SECONDS: int = 21600  # 6 hours
     APP_ENV: Literal["development", "production", "vercel"] = "production"
-    HOST_NAME: str = "https://1ccea4301587-watchly.baby-beamup.club"
+    HOST_NAME: str = "https://watchly-tinu.onrender.com"
 
     RECOMMENDATION_SOURCE_ITEMS_LIMIT: int = 10
     LIBRARY_ITEMS_LIMIT: int = 20
