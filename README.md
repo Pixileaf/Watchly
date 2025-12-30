@@ -1,4 +1,4 @@
-# Watchly hosted by Render
+# Watchly hosted on Render
 
 ## Installation
 
