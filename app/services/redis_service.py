@@ -101,6 +101,31 @@ class RedisService:
             logger.error(f"Failed to check existence of key '{key}' in Redis: {exc}")
             return False
 
+    async def delete_by_pattern(self, pattern: str) -> int:
+        """Delete all keys matching a pattern.
+
+        Args:
+            pattern: Redis key pattern (e.g., "watchly:catalog:token123:*")
+
+        Returns:
+            Number of keys deleted
+        """
+        try:
+            client = await self.get_client()
+            deleted_count = 0
+            keys_to_delete = []
+            async for key in client.scan_iter(match=pattern, count=500):
+                keys_to_delete.append(key)
+                if len(keys_to_delete) >= 500:
+                    deleted_count += await client.delete(*keys_to_delete)
+                    keys_to_delete = []
+            if keys_to_delete:
+                deleted_count += await client.delete(*keys_to_delete)
+            return deleted_count
+        except (redis.RedisError, OSError) as exc:
+            logger.error(f"Failed to delete keys matching pattern '{pattern}' in Redis: {exc}")
+            return 0
+
     async def close(self) -> None:
         """Close and disconnect the Redis client"""
         if self._client is not None:

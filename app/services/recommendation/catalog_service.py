@@ -6,6 +6,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.constants import DEFAULT_CATALOG_LIMIT, DEFAULT_MIN_ITEMS
+from app.core.security import redact_token
 from app.core.settings import UserSettings, get_default_settings
 from app.models.taste_profile import TasteProfile
 from app.services.catalog_updater import catalog_updater
@@ -19,9 +20,35 @@ from app.services.recommendation.utils import pad_to_min
 from app.services.stremio.service import StremioBundle
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
+from app.services.user_cache import user_cache
+from app.utils.catalog import cache_profile_and_watched_sets
 
-PAD_RECOMMENDATIONS_THRESHOLD = 8
-PAD_RECOMMENDATIONS_TARGET = 10
+
+def _clean_meta(meta: dict) -> dict:
+    """Return a sanitized Stremio meta object without internal fields.
+
+    Keeps only public keys and drops internal scoring/IDs/keywords/cast, etc.
+    """
+    allowed = {
+        "id",
+        "type",
+        "name",
+        "poster",
+        "background",
+        "description",
+        "releaseInfo",
+        "imdbRating",
+        "genres",
+        "runtime",
+    }
+    cleaned = {k: v for k, v in meta.items() if k in allowed}
+    # Drop empty values
+    cleaned = {k: v for k, v in cleaned.items() if v not in (None, "", [], {}, ())}
+
+    # if id does not start with tt, return None
+    if not cleaned.get("id", "").startswith("tt"):
+        return None
+    return cleaned
 
 
 class CatalogService:
@@ -45,7 +72,10 @@ class CatalogService:
         # Validate inputs
         self._validate_inputs(token, content_type, catalog_id)
 
-        logger.info(f"[{token[:8]}...] Fetching catalog for {content_type} with id {catalog_id}")
+        # Prepare response headers
+        headers: dict[str, Any] = {"Cache-Control": f"public, max-age={settings.CATALOG_CACHE_TTL}"}
+
+        logger.info(f"[{redact_token(token)}...] Fetching catalog for {content_type} with id {catalog_id}")
 
         # Get credentials
         credentials = await token_store.get_user_data(token)
@@ -55,13 +85,23 @@ class CatalogService:
 
         # Trigger lazy update if needed
         if settings.AUTO_UPDATE_CATALOGS:
-            logger.info(f"[{token[:8]}...] Triggering auto update for token")
+            logger.info(f"[{redact_token(token)}...] Triggering auto update for token")
             try:
                 await catalog_updater.trigger_update(token, credentials)
             except Exception as e:
-                logger.error(f"[{token[:8]}...] Failed to trigger auto update: {e}")
+                logger.error(f"[{redact_token(token)}...] Failed to trigger auto update: {e}")
                 # continue with the request even if the auto update fails
                 pass
+
+        # get cached catalog
+        cached_data = await user_cache.get_catalog(token, content_type, catalog_id)
+        if cached_data:
+            logger.debug(f"[{redact_token(token)}...] Using cached catalog for {content_type}/{catalog_id}")
+            return cached_data, headers
+
+        logger.info(
+            f"[{redact_token(token)}...] Catalog not cached for {content_type}/{catalog_id}, building from" " scratch"
+        )
 
         bundle = StremioBundle()
         try:
@@ -70,18 +110,35 @@ class CatalogService:
             user_settings = self._extract_settings(credentials)
             language = user_settings.language if user_settings else "en-US"
 
-            # Fetch library
-            library_items = await bundle.library.get_library_items(auth_key)
+            # Try to get cached library items first
+            library_items = await user_cache.get_library_items(token)
 
-            # Initialize services
+            if library_items:
+                logger.debug(f"[{redact_token(token)}...] Using cached library items")
+            else:
+                # Fetch library if not cached
+                logger.info(f"[{redact_token(token)}...] Library items not cached, fetching from Stremio")
+                library_items = await bundle.library.get_library_items(auth_key)
+                # Cache it for future use
+                await user_cache.set_library_items(token, library_items)
+
             services = self._initialize_services(language, user_settings)
-
             integration_service: ProfileIntegration = services["integration"]
 
-            # Build profile and watched sets (once, reused)
-            profile, watched_tmdb, watched_imdb = await integration_service.build_profile_from_library(
-                library_items, content_type, bundle, auth_key
-            )
+            # Try to get cached profile and watched sets
+            cached_data = await user_cache.get_profile_and_watched_sets(token, content_type)
+
+            if cached_data:
+                # Use cached profile and watched sets
+                profile, watched_tmdb, watched_imdb = cached_data
+                logger.debug(f"[{redact_token(token)}...] Using cached profile and watched sets for {content_type}")
+            else:
+                # Build profile if not cached
+                logger.info(f"[{redact_token(token)}...] Profile not cached for {content_type}, building from library")
+                profile, watched_tmdb, watched_imdb = await cache_profile_and_watched_sets(
+                    token, content_type, integration_service, library_items, bundle, auth_key
+                )
+
             whitelist = await integration_service.get_genre_whitelist(profile, content_type) if profile else set()
 
             # Route to appropriate recommendation service
@@ -112,10 +169,16 @@ class CatalogService:
 
             logger.info(f"Returning {len(recommendations)} items for {content_type}")
 
-            # Prepare response headers
-            headers = {"Cache-Control": f"public, max-age={settings.CATALOG_CACHE_TTL}"}
+            # Clean and format metadata
+            cleaned = [_clean_meta(m) for m in recommendations]
+            cleaned = [m for m in cleaned if m is not None]
 
-            return recommendations, headers
+            data = {"metas": cleaned}
+            # if catalog data is not empty, set the cache
+            if cleaned:
+                await user_cache.set_catalog(token, content_type, catalog_id, data, settings.CATALOG_CACHE_TTL)
+
+            return data, headers
 
         finally:
             await bundle.close()
