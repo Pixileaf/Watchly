@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     TMDB_API_KEY: str | None = None
     PORT: int = 8000
-    ADDON_ID: str = "com.bimal.watchly"
+    ADDON_ID: str = "com.pixileaf.watchly"
     ADDON_NAME: str = "Watchly"
     REDIS_URL: str = "redis://redis:6379/0"
     # Maximum number of connections Redis client will open per process
