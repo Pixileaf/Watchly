@@ -13,6 +13,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.security import redact_token
 from app.services.redis_service import redis_service
+from app.services.user_cache import user_cache
 
 
 class TokenStore:
@@ -174,6 +175,12 @@ class TokenStore:
             key = self._format_key(token)
 
         await redis_service.delete(key)
+        # we also need to delete the cached library items, profiles and watched sets
+        if token:
+            try:
+                await user_cache.invalidate_all_user_data(token)
+            except Exception as e:
+                logger.warning(f"Failed to invalidate all user data for {redact_token(token)}: {e}")
 
         # Invalidate async LRU cache so future reads reflect deletion
         try:

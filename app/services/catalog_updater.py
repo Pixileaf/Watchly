@@ -9,20 +9,11 @@ from app.core.config import settings
 from app.core.security import redact_token
 from app.core.settings import UserSettings
 from app.services.catalog import DynamicCatalogService
+from app.services.manifest import manifest_service
 from app.services.stremio.service import StremioBundle
 from app.services.token_store import token_store
 from app.services.translation import translation_service
-
-
-def get_config_id(catalog) -> str | None:
-    catalog_id = catalog.get("id", "")
-    if catalog_id.startswith("watchly.theme."):
-        return "watchly.theme"
-    if catalog_id.startswith("watchly.loved."):
-        return "watchly.loved"
-    if catalog_id.startswith("watchly.watched."):
-        return "watchly.watched"
-    return catalog_id
+from app.utils.catalog import get_config_id
 
 
 class CatalogUpdater:
@@ -116,13 +107,15 @@ class CatalogUpdater:
                     user_settings = UserSettings(**credentials["settings"])
                 except Exception as e:
                     logger.exception(f"[{redact_token(token)}] Failed to parse user settings: {e}")
-                    return True  # if user doesn't have setting, we can't update the catalogs. so no need to try again.
+                    # if user doesn't have setting, we can't update the catalogs.
+                    # so no need to try again.
+                    return True
 
-            # Fetch fresh library
-            library_items = await bundle.library.get_library_items(auth_key)
+            library_items = await manifest_service.cache_library_and_profiles(bundle, auth_key, user_settings, token)
+            language = user_settings.language if user_settings else "en-US"
 
             dynamic_catalog_service = DynamicCatalogService(
-                language=(user_settings.language if user_settings else "en-US"),
+                language=language,
             )
 
             catalogs = await dynamic_catalog_service.get_dynamic_catalogs(
