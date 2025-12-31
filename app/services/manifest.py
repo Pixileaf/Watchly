@@ -131,8 +131,11 @@ class ManifestService:
         self, bundle: StremioBundle, auth_key: str, user_settings: UserSettings | None, token: str
     ) -> list[dict[str, Any]]:
         """Build dynamic catalogs for the manifest."""
-        # Ensure library and profiles are cached
-        library_items = await self._ensure_library_and_profiles_cached(bundle, auth_key, user_settings, token)
+        # check if cached, if not, fetch and cache
+        library_items = await user_cache.get_library_items(token)
+        if not library_items:
+            library_items = await self._ensure_library_and_profiles_cached(bundle, auth_key, user_settings, token)
+            await user_cache.set_library_items(token, library_items)
 
         dynamic_catalog_service = DynamicCatalogService(language=user_settings.language)
         return await dynamic_catalog_service.get_dynamic_catalogs(library_items, user_settings)
