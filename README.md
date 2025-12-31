@@ -1,5 +1,14 @@
 # Pixileaf's Watchly instance hosted on Render
 
+<div align="center">
+
+<!-- Premium Badge Collection -->
+[![Version](https://img.shields.io/github/v/release/timilsinabimal/watchly?style=for-the-badge&logo=semver&color=6366f1)](https://github.com/timilsinabimal/watchly/releases)
+[![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
+
+</div>
+<br/>
+
 ## Installation
 
 - **[Watchly hosted on Render](https://watchly-tinu.onrender.com)**
