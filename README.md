@@ -1,10 +1,10 @@
-# Watchly hosted on Render
+# Pixileaf's Watchly instance hosted on Render
 
 ## Installation
 
-### Stremio Addon link
-
 - **[Watchly hosted on Render](https://watchly-tinu.onrender.com)**
+- **Stremio Community addons section by searching "Watchly"**
+- **[Watchly on StremioAddons.net](https://stremio-addons.net/addons/pixiswatchly)**
 
 ## Contributing
 
