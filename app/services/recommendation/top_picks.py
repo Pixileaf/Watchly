@@ -146,14 +146,14 @@ class TopPicksService:
             List of candidate items
         """
         # Get top items (loved first, then liked, then added, then top watched)
-        top_items = self.smart_sampler.sample_items(library_items, content_type, max_items=15)
+        top_items = self.smart_sampler.sample_items(library_items, content_type, max_items=10)
 
         candidates = []
         tasks = []
 
         for item in top_items:
             item = item.item
-            item_id = item.get("_id", "")
+            item_id = item.id
             if not item_id:
                 continue
 
