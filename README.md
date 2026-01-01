@@ -11,6 +11,9 @@
 
 **Watchly** is a Stremio catalog addon that provides personalized movie and series recommendations based on your Stremio library. It uses The Movie Database (TMDB) API to generate intelligent recommendations from the content you've watched and loved.
 
+### Screenshot
+<img src="./app/static/screenshots/homepage.png" alt="Top Picks" width="800"/>
+
 ## Installation
 
 - **[Watchly hosted on Render](https://watchly-tinu.onrender.com)**
