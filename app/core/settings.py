@@ -21,15 +21,27 @@ class UserSettings(BaseModel):
 
 # Catalog descriptions for frontend
 CATALOG_DESCRIPTIONS = {
-    "watchly.rec": "Personalized recommendations based on your library",
-    "watchly.loved": "Recommendations similar to content you explicitly loved",
-    "watchly.watched": "Recommendations based on your recent watch history",
-    "watchly.creators": "Movies and series from your top 5 favorite directors and top 5 favorite actors",
+    "watchly.rec": "Personalized recommendations based on your watch history, library and your reactions.",
+    "watchly.loved": (
+        "Recommends items similar to the content you recently loved. example: If you loved 'The Dark Knight',"
+        " Then it will show similar items to 'The Dark Knight'. This takes your last 3 loved items and shuffles"
+        " them and picks one at random."
+    ),
+    "watchly.watched": (
+        "Recommends items similar to the content you recently watched. example: If you watched 'The Dark"
+        " Knight', Then it will show similar items to 'The Dark Knight'. This takes your last 3 watched items"
+        " and shuffles them and picks one at random."
+    ),
+    "watchly.creators": (
+        "Recommends items from your top 5 favorite directors and top 5 favorite actors.(Favourite = Most"
+        " watched items)"
+    ),
     "watchly.all.loved": "Recommendations based on all your loved items",
     "watchly.liked.all": "Recommendations based on all your liked items",
     "watchly.theme": (
-        "Dynamic catalogs based on your favorite genres, keyword, countries and many more."
-        "Just like netflix. Example: American Horror, Based on Novel or Book etc."
+        "Dynamic catalogs based on your favorite genres, keyword, countries and many more.Just like netflix."
+        " Example: American Horror, Based on Novel or Book etc. This will show atmost 4 catalogs each for"
+        " movies and series. This number can vary based on your history."
     ),
 }
 
