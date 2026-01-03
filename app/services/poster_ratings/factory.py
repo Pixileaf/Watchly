@@ -28,7 +28,7 @@ class PosterRatingsFactory:
             PosterProvider.RPDB: self.rpdb_service,
             PosterProvider.TOP_POSTERS: self.top_posters_service,
         }
-        return poster_provider_map[poster_provider].get_poster(api_key, provider, item_id, **kwargs)
+        return poster_provider_map[poster_provider].get_poster_url(api_key, provider, item_id, **kwargs)
 
 
 poster_ratings_factory = PosterRatingsFactory()
