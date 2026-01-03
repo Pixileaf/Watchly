@@ -1,4 +1,7 @@
+import math
 from datetime import datetime, timezone
+
+from loguru import logger
 
 from app.models.scoring import ScoredItem, StremioLibraryItem
 
@@ -62,14 +65,11 @@ class ScoringService:
         completion_score = 0.0
         completion_rate = 0.0
 
-        # Prefer ratio-based completion when duration is available to avoid
-        # treating short partial plays as full completion just because
-        # `timesWatched` was incremented. If duration is missing, fall back
-        # to conservative estimates based on timesWatched/flaggedWatched.
         if state.duration and state.duration > 0:
             try:
                 ratio = min(float(state.timeWatched) / float(state.duration), 1.0)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Math error in completion ratio calculation for {item.state}: {e}")
                 ratio = 0.0
             completion_rate = ratio
             completion_score = ratio * 100.0
@@ -117,14 +117,17 @@ class ScoringService:
                         ratio_component = max((ratio_est - 1.0) * 100.0, 0.0)
                     else:
                         ratio_component = max((float(state.timesWatched) - 1.0) * 20.0, 0.0)
-            except Exception:
+            except Exception as e:
+                from loguru import logger
+
+                logger.debug(f"Math error in rewatch score calculation for {item.item.id}: {e}")
                 ratio_component = 0.0
 
             # Combine components but clamp to reasonable bounds
             combined = max(times_component, ratio_component)
             rewatch_score = min(combined, 100.0)
 
-        # 3. Recency Score
+        # 3. Recency Score (Exponential Decay)
         recency_score = 0.0
         is_recent = False
         if state.lastWatched:
@@ -136,18 +139,13 @@ class ScoringService:
 
             days_since = (now - last_watched).days
 
-            if days_since < 7:
-                recency_score = 200
-                is_recent = True
-            elif days_since < 30:
-                recency_score = 100
-                is_recent = True
-            elif days_since < 90:
-                recency_score = 70
-            elif days_since < 180:
-                recency_score = 30
-            elif days_since < 365:
-                recency_score = 10
+            MAX_RECENCY_SCORE = 100.0
+            HALF_LIFE_DAYS = 60.0  # Days for score to halve
+
+            if days_since >= 0:
+                recency_score = MAX_RECENCY_SCORE * math.exp(-days_since / HALF_LIFE_DAYS)
+                # Mark as recent if watched within last 30 days
+                is_recent = days_since < 30
 
         # 4. Explicit Rating Score
         rating_score = 0.0

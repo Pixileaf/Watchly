@@ -13,6 +13,11 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+# if openai key is bytesconvert it to string
+if isinstance(OPENAI_API_KEY, bytes):
+    OPENAI_API_KEY = OPENAI_API_KEY.decode("utf-8")
+
 oai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
@@ -210,11 +215,11 @@ def generate_release_notes(commits, last_release_tag):
     prompt = (
         "Generate release notes for the given commits. Focus on user-facing changes and important technical"
         " improvements that stakeholders care about Organize changes into clear sections such as: Summary,"
-        " Features, Bug Fixes, Improvements, etc. with markdown formatting. Include PR requests with (#123) at"
-        " the end of each change. Include refactor commits only if they contain meaningful architectural"
-        " changes. Exclude trivial changes like formatting, linting, merge commits, or dependency updates"
-        " unless they're significant. Be concise but informative. Format with proper markdown. Do not include"
-        " commit hashes. Do not output anything other than the release notes. Keep it to a reasonable length"
+        " Features, Bug Fixes, Improvements, etc. with markdown formatting. Include refactor commits only if"
+        " they contain meaningful architectural changes. Exclude trivial changes like formatting, linting,"
+        " merge commits, or dependency updates unless they're significant. Format with proper markdown. When"
+        " generating release notes, do not just write commit messages. Describe them. Try to make them like"
+        " release change.Do not output anything other than the release notes. Keep it to a reasonable length"
         " that helps developers and engineers understand the changes. This is directly attached to GitHub"
         " release notes, so please do not include anything other than required.\n\nAdditionally, suggest a"
         " unique version name inspired by something beautiful and unique to Nepal (such as a place, temple,"

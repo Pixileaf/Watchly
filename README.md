@@ -1,4 +1,16 @@
 # Watchly
+
+<div align="center">
+
+<!-- Premium Badge Collection -->
+[![Version](https://img.shields.io/github/v/release/timilsinabimal/watchly?style=for-the-badge&logo=semver&color=6366f1)](https://github.com/timilsinabimal/watchly/releases)
+[![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/timilsinabimal/watchly?style=for-the-badge&color=f59e0b&logo=github)](https://github.com/timilsinabimal/watchly/stargazers)
+[![Buy me  Coffee](https://img.shields.io/badge/Ko--fi-Support-F16061?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/timilsinabimal)
+
+</div>
+<br/>
+
 **Watchly** is a Stremio catalog addon that provides personalized movie and series recommendations based on your Stremio library. It uses The Movie Database (TMDB) API to generate intelligent recommendations from the content you've watched and loved.
 
 ## Features
@@ -13,6 +25,11 @@
 - **Background Sync**: Keeps your catalogs updated automatically in the background.
 - **Performance Optimized**: Intelligent caching for fast and reliable responses.
 
+### Screenshot
+<img src="./app/static/screenshots/homepage.png" alt="Top Picks" width="800"/>
+
+
+Find more screenshots [here](./app/static/screenshots/)
 ## Installation
 
 ### Using Docker (Recommended)
@@ -51,6 +68,7 @@ You can pull the latest image from the GitHub Container Registry.
     # Required
     TMDB_API_KEY=your_tmdb_api_key_here
     TOKEN_SALT=generate_a_random_secure_string_here
+    HOST_NAME=your_addon_url
 
     # Optional
     PORT=8000
@@ -81,7 +99,7 @@ To run the project locally:
     ```
 
 2.  **Install dependencies:**
-    We recommend using [uv](https://github.com/astral-sh/uv) for fast dependency management.
+    I recommend using [uv](https://github.com/astral-sh/uv) for fast dependency management.
     ```bash
     uv sync
     ```
@@ -93,10 +111,10 @@ To run the project locally:
 
 ## Contributing
 
-We welcome contributions of all sizes!
+I welcome contributions of all sizes!
 
 - **Small Bug Fixes & Improvements**: Feel free to open a Pull Request directly.
-- **Major Features & Refactors**: Please **open an issue first** to discuss your proposed changes. This helps ensure your work aligns with the project's direction and saves you time.
+- **Major Features & Refactors**: Please **[open an issue](https://github.com/TimilsinaBimal/Watchly/issues)** to discuss your proposed changes. This helps ensure your work aligns with the project's direction and saves you time.
 
 ## Funding & Support
 
