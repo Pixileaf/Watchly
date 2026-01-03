@@ -1,3 +1,4 @@
+import random
 import re
 from typing import Any
 
@@ -22,6 +23,19 @@ from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
 from app.utils.catalog import cache_profile_and_watched_sets
+
+
+def should_shuffle(user_settings: UserSettings, catalog_id: str) -> bool:
+    config = next((c for c in user_settings.catalogs if c.id == catalog_id), None)
+    return getattr(config, "shuffle", False) if config else False
+
+
+def shuffle_data_if_needed(
+    user_settings: UserSettings, catalog_id: str, data: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    if should_shuffle(user_settings, catalog_id):
+        random.shuffle(data)
+    return data
 
 
 def _clean_meta(meta: dict) -> dict:
@@ -93,21 +107,25 @@ class CatalogService:
                 # continue with the request even if the auto update fails
                 pass
 
+        bundle = StremioBundle()
+        # Resolve auth and settings
+        auth_key = await self._resolve_auth(bundle, credentials, token)
+        user_settings = self._extract_settings(credentials)
+
         # get cached catalog
         cached_data = await user_cache.get_catalog(token, content_type, catalog_id)
         if cached_data:
             logger.debug(f"[{redact_token(token)}...] Using cached catalog for {content_type}/{catalog_id}")
+            meta_data = cached_data["metas"]
+            meta_data = shuffle_data_if_needed(user_settings, catalog_id, meta_data)
+            cached_data["metas"] = meta_data
             return cached_data, headers
 
         logger.info(
             f"[{redact_token(token)}...] Catalog not cached for {content_type}/{catalog_id}, building from" " scratch"
         )
 
-        bundle = StremioBundle()
         try:
-            # Resolve auth and settings
-            auth_key = await self._resolve_auth(bundle, credentials, token)
-            user_settings = self._extract_settings(credentials)
             language = user_settings.language if user_settings else "en-US"
 
             # Try to get cached library items first
@@ -172,6 +190,8 @@ class CatalogService:
             # Clean and format metadata
             cleaned = [_clean_meta(m) for m in recommendations]
             cleaned = [m for m in cleaned if m is not None]
+
+            cleaned = shuffle_data_if_needed(user_settings, catalog_id, cleaned)
 
             data = {"metas": cleaned}
             # if catalog data is not empty, set the cache
