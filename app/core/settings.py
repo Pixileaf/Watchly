@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.services.poster_ratings.factory import PosterProvider
+
 
 class CatalogConfig(BaseModel):
     id: str  # "watchly.rec", "watchly.theme", "watchly.item"
@@ -11,10 +13,17 @@ class CatalogConfig(BaseModel):
     shuffle: bool = Field(default=False, description="Randomize order of items in this catalog")
 
 
+class PosterRatingConfig(BaseModel):
+    """Configuration for poster rating provider."""
+
+    provider: PosterProvider = Field(description="Provider name: 'rpdb' or 'top_posters'")
+    api_key: str = Field(description="API key for the provider")
+
+
 class UserSettings(BaseModel):
     catalogs: list[CatalogConfig]
     language: str = "en-US"
-    rpdb_key: str | None = None
+    poster_rating: PosterRatingConfig | None = Field(default=None, description="Poster rating provider configuration")
     excluded_movie_genres: list[str] = Field(default_factory=list)
     excluded_series_genres: list[str] = Field(default_factory=list)
 
